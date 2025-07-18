@@ -11,8 +11,6 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { RAGPipeline } from '../src/services/ragPipeline';
-
 interface Message {
   id: string;
   text: string;
@@ -24,7 +22,6 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [ragPipeline, setRagPipeline] = useState<RAGPipeline | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
 
