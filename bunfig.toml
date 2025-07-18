@@ -1,0 +1,2 @@
+entrypoints = ["./App.tsx"]
+target = "bun"
