@@ -43,7 +43,7 @@ export default function SettingsScreen() {
       chunks: 12,
       modelLoaded: true,
       platform: 'React Native + Expo',
-      llm: 'Simple RAG (Document Search)',
+      llm: 'Enhanced RAG (ONNX + Fallback)',
       vectorStore: 'In-Memory',
       sync: 'BLE (Coming Soon)'
     };

@@ -25,7 +25,7 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [simpleRAG, setSimpleRAG] = useState<any>(null);
+  const [enhancedRAG, setEnhancedRAG] = useState<any>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
@@ -39,11 +39,11 @@ export default function ChatScreen() {
     try {
       console.log('Initializing LEAI app...');
       
-      // Initialize Simple RAG
-      const { SimpleRAG } = await import('../src/services/simpleRAG');
-      const rag = new SimpleRAG();
+      // Initialize Enhanced RAG
+      const { EnhancedRAG } = await import('../src/services/enhancedRAG');
+      const rag = new EnhancedRAG();
       await rag.initialize();
-      setSimpleRAG(rag);
+      setEnhancedRAG(rag);
       
       setIsInitialized(true);
       
@@ -70,7 +70,7 @@ export default function ChatScreen() {
   };
 
   const sendMessage = async () => {
-    if (inputText.trim() && !isLoading && isInitialized && simpleRAG) {
+    if (inputText.trim() && !isLoading && isInitialized && enhancedRAG) {
       const userMessage: Message = {
         id: Date.now().toString(),
         text: inputText,
@@ -83,17 +83,25 @@ export default function ChatScreen() {
       setIsLoading(true);
       
       try {
-        // Use Simple RAG to generate response
-        const response = await simpleRAG.processQuery(inputText);
+        // Use Enhanced RAG to generate response
+        const ragResponse = await enhancedRAG.processQuery(inputText);
         
         const botMessage: Message = {
           id: (Date.now() + 1).toString(),
-          text: response,
+          text: ragResponse.text,
           isUser: false,
           timestamp: new Date()
         };
         
         setMessages(prev => [...prev, botMessage]);
+        
+        // Log response details for debugging
+        console.log('RAG Response:', {
+          modelUsed: ragResponse.modelUsed,
+          confidence: ragResponse.confidence,
+          processingTime: ragResponse.processingTime,
+          documentsReferenced: ragResponse.documentsReferenced
+        });
       } catch (error) {
         console.error('Error processing message:', error);
         const errorMessage: Message = {
