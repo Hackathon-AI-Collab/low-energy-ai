@@ -1,3 +1,4 @@
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -11,7 +12,6 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { useHeaderHeight } from '@react-navigation/elements';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface Message {
@@ -25,23 +25,47 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
   const headerHeight = useHeaderHeight();
 
   useEffect(() => {
-    // Add welcome message
-    const welcomeMessage: Message = {
-      id: 'welcome',
-      text: 'Hello! I\'m LEAI, your low-energy AI assistant. I can help you with medical guidelines, search and rescue procedures, and technical information. What would you like to know?',
-      isUser: false,
-      timestamp: new Date()
-    };
-    setMessages([welcomeMessage]);
+    initializeApp();
   }, []);
 
+  const initializeApp = async () => {
+    try {
+      console.log('Initializing LEAI app...');
+      
+      // For now, use placeholder initialization
+      // In a full implementation, this would initialize the RAG pipeline
+      setIsInitialized(true);
+      
+      // Add welcome message
+      const welcomeMessage: Message = {
+        id: 'welcome',
+        text: 'Hello! I\'m LEAI, your low-energy AI assistant. I can help you with medical guidelines, search and rescue procedures, and technical information. What would you like to know?',
+        isUser: false,
+        timestamp: new Date()
+      };
+      setMessages([welcomeMessage]);
+      
+      console.log('LEAI app initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize app:', error);
+      const errorMessage: Message = {
+        id: 'error',
+        text: 'Sorry, I encountered an error during initialization. Please restart the app.',
+        isUser: false,
+        timestamp: new Date()
+      };
+      setMessages([errorMessage]);
+    }
+  };
+
   const sendMessage = async () => {
-    if (inputText.trim() && !isLoading) {
+    if (inputText.trim() && !isLoading && isInitialized) {
       const userMessage: Message = {
         id: Date.now().toString(),
         text: inputText,
@@ -54,14 +78,14 @@ export default function ChatScreen() {
       setIsLoading(true);
       
       try {
-        // For now, use placeholder responses since RAG pipeline is not available in this context
+        // Placeholder responses for demo
         let response = '';
         if (inputText.toLowerCase().includes('medical') || inputText.toLowerCase().includes('tccc')) {
           response = 'Based on TCCC guidelines, immediate attention should be given to massive hemorrhage control using tourniquets for extremity bleeding. Always follow the MARCH algorithm: Massive hemorrhage, Airway, Respiration, Circulation, Hypothermia/Head injury.';
         } else if (inputText.toLowerCase().includes('search') || inputText.toLowerCase().includes('rescue')) {
           response = 'For search and rescue operations, ensure scene safety first, establish incident command, and conduct a systematic size-up of the structure. Use systematic search patterns and mark searched areas appropriately.';
         } else {
-          response = `I understand you're asking about: "${inputText}". This is a placeholder response from the LEAI system. The actual RAG pipeline integration is pending for the hackathon demo.`;
+          response = `I understand you're asking about: "${inputText}". This is a placeholder response from the LEAI system. The RAG pipeline integration is being implemented.`;
         }
         
         const botMessage: Message = {
@@ -84,6 +108,14 @@ export default function ChatScreen() {
       } finally {
         setIsLoading(false);
       }
+    } else if (!isInitialized) {
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        text: 'System is still initializing. Please wait a moment and try again.',
+        isUser: false,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
     }
   };
 
@@ -150,12 +182,12 @@ export default function ChatScreen() {
             placeholderTextColor="#999"
             multiline
             maxLength={500}
-            editable={!isLoading}
+            editable={!isLoading && isInitialized}
           />
           <TouchableOpacity 
-            style={[styles.sendButton, (!inputText.trim() || isLoading) && styles.sendButtonDisabled]} 
+            style={[styles.sendButton, (!inputText.trim() || isLoading || !isInitialized) && styles.sendButtonDisabled]} 
             onPress={sendMessage}
-            disabled={!inputText.trim() || isLoading}
+            disabled={!inputText.trim() || isLoading || !isInitialized}
           >
             <Text style={styles.sendButtonText}>Send</Text>
           </TouchableOpacity>
