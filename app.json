@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "my-temp-app",
-    "slug": "my-temp-app",
+    "name": "LEAI Platform",
+    "slug": "leai-platform",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mytempapp",
+    "scheme": "leai",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -14,10 +14,11 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#007AFF"
       },
       "edgeToEdgeEnabled": true
     },
+
     "web": {
       "bundler": "metro",
       "output": "static",
@@ -31,7 +32,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#007AFF"
         }
       ]
     ],
