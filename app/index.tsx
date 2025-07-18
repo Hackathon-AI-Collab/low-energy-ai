@@ -11,6 +11,9 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { useHeaderHeight } from '@react-navigation/elements';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
 interface Message {
   id: string;
   text: string;
@@ -24,6 +27,7 @@ export default function ChatScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
+  const headerHeight = useHeaderHeight();
 
   useEffect(() => {
     // Add welcome message
@@ -95,66 +99,69 @@ export default function ChatScreen() {
   );
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>LEAI Assistant</Text>
-        <Text style={styles.headerSubtitle}>Low-Energy AI Platform</Text>
-        <View style={styles.navButtons}>
-          <TouchableOpacity 
-            style={styles.navButton} 
-            onPress={() => router.push('/knowledge-base')}
-          >
-            <Text style={styles.navButtonText}>Knowledge Base</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.navButton} 
-            onPress={() => router.push('/settings')}
-          >
-            <Text style={styles.navButtonText}>Settings</Text>
-          </TouchableOpacity>
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView 
+        style={styles.container} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={headerHeight}
+      >
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>LEAI Assistant</Text>
+          <Text style={styles.headerSubtitle}>Low-Energy AI Platform</Text>
+          <View style={styles.navButtons}>
+            <TouchableOpacity 
+              style={styles.navButton} 
+              onPress={() => router.push('/knowledge-base')}
+            >
+              <Text style={styles.navButtonText}>Knowledge Base</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.navButton} 
+              onPress={() => router.push('/settings')}
+            >
+              <Text style={styles.navButtonText}>Settings</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-      
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={renderMessage}
-        style={styles.messagesList}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
-        onLayout={() => flatListRef.current?.scrollToEnd()}
-      />
-      
-      {isLoading && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color="#007AFF" />
-          <Text style={styles.loadingText}>Processing...</Text>
-        </View>
-      )}
-      
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          value={inputText}
-          onChangeText={setInputText}
-          placeholder="Ask a question..."
-          placeholderTextColor="#999"
-          multiline
-          maxLength={500}
-          editable={!isLoading}
+        
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          renderItem={renderMessage}
+          style={styles.messagesList}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
         />
-        <TouchableOpacity 
-          style={[styles.sendButton, (!inputText.trim() || isLoading) && styles.sendButtonDisabled]} 
-          onPress={sendMessage}
-          disabled={!inputText.trim() || isLoading}
-        >
-          <Text style={styles.sendButtonText}>Send</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+        
+        {isLoading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color="#007AFF" />
+            <Text style={styles.loadingText}>Processing...</Text>
+          </View>
+        )}
+        
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="Ask a question..."
+            placeholderTextColor="#999"
+            multiline
+            maxLength={500}
+            editable={!isLoading}
+          />
+          <TouchableOpacity 
+            style={[styles.sendButton, (!inputText.trim() || isLoading) && styles.sendButtonDisabled]} 
+            onPress={sendMessage}
+            disabled={!inputText.trim() || isLoading}
+          >
+            <Text style={styles.sendButtonText}>Send</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -284,5 +291,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
-  },
+  }
 }); 
