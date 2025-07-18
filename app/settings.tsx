@@ -39,11 +39,11 @@ export default function SettingsScreen() {
   const getAppInfo = () => {
     return {
       version: '1.0.0',
-      documents: 2,
-      chunks: 15,
+      documents: 3,
+      chunks: 12,
       modelLoaded: true,
       platform: 'React Native + Expo',
-      llm: 'ONNX Runtime (Placeholder)',
+      llm: 'Simple RAG (Document Search)',
       vectorStore: 'In-Memory',
       sync: 'BLE (Coming Soon)'
     };
