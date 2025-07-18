@@ -25,7 +25,7 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [enhancedRAG, setEnhancedRAG] = useState<any>(null);
+  const [advancedRAG, setAdvancedRAG] = useState<any>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
@@ -39,11 +39,11 @@ export default function ChatScreen() {
     try {
       console.log('Initializing LEAI app...');
       
-      // Initialize Enhanced RAG
-      const { EnhancedRAG } = await import('../src/services/enhancedRAG');
-      const rag = new EnhancedRAG();
+      // Initialize Advanced RAG
+      const { AdvancedRAG } = await import('../src/services/advancedRAG');
+      const rag = new AdvancedRAG();
       await rag.initialize();
-      setEnhancedRAG(rag);
+      setAdvancedRAG(rag);
       
       setIsInitialized(true);
       
@@ -70,7 +70,7 @@ export default function ChatScreen() {
   };
 
   const sendMessage = async () => {
-    if (inputText.trim() && !isLoading && isInitialized && enhancedRAG) {
+    if (inputText.trim() && !isLoading && isInitialized && advancedRAG) {
       const userMessage: Message = {
         id: Date.now().toString(),
         text: inputText,
@@ -83,8 +83,8 @@ export default function ChatScreen() {
       setIsLoading(true);
       
       try {
-        // Use Enhanced RAG to generate response
-        const ragResponse = await enhancedRAG.processQuery(inputText);
+        // Use Advanced RAG to generate response
+        const ragResponse = await advancedRAG.processQuery(inputText);
         
         const botMessage: Message = {
           id: (Date.now() + 1).toString(),
