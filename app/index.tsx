@@ -25,6 +25,7 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [simpleRAG, setSimpleRAG] = useState<any>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
@@ -38,8 +39,12 @@ export default function ChatScreen() {
     try {
       console.log('Initializing LEAI app...');
       
-      // For now, use placeholder initialization
-      // In a full implementation, this would initialize the RAG pipeline
+      // Initialize Simple RAG
+      const { SimpleRAG } = await import('../src/services/simpleRAG');
+      const rag = new SimpleRAG();
+      await rag.initialize();
+      setSimpleRAG(rag);
+      
       setIsInitialized(true);
       
       // Add welcome message
@@ -65,7 +70,7 @@ export default function ChatScreen() {
   };
 
   const sendMessage = async () => {
-    if (inputText.trim() && !isLoading && isInitialized) {
+    if (inputText.trim() && !isLoading && isInitialized && simpleRAG) {
       const userMessage: Message = {
         id: Date.now().toString(),
         text: inputText,
@@ -78,15 +83,8 @@ export default function ChatScreen() {
       setIsLoading(true);
       
       try {
-        // Placeholder responses for demo
-        let response = '';
-        if (inputText.toLowerCase().includes('medical') || inputText.toLowerCase().includes('tccc')) {
-          response = 'Based on TCCC guidelines, immediate attention should be given to massive hemorrhage control using tourniquets for extremity bleeding. Always follow the MARCH algorithm: Massive hemorrhage, Airway, Respiration, Circulation, Hypothermia/Head injury.';
-        } else if (inputText.toLowerCase().includes('search') || inputText.toLowerCase().includes('rescue')) {
-          response = 'For search and rescue operations, ensure scene safety first, establish incident command, and conduct a systematic size-up of the structure. Use systematic search patterns and mark searched areas appropriately.';
-        } else {
-          response = `I understand you're asking about: "${inputText}". This is a placeholder response from the LEAI system. The RAG pipeline integration is being implemented.`;
-        }
+        // Use Simple RAG to generate response
+        const response = await simpleRAG.processQuery(inputText);
         
         const botMessage: Message = {
           id: (Date.now() + 1).toString(),

@@ -8,6 +8,7 @@ import {
     Text,
     View
 } from 'react-native';
+import { SampleDocumentService } from '../src/services/sampleDocuments';
 
 interface Document {
   id: string;
@@ -28,24 +29,25 @@ export default function KnowledgeBaseScreen() {
 
   const loadDocuments = async () => {
     try {
-      // Mock data for demo
-      const mockDocs: Document[] = [
-        {
-          id: '1',
-          title: 'TCCC Guidelines',
-          type: 'markdown',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: '2',
-          title: 'Search and Rescue Procedures',
-          type: 'markdown',
-          createdAt: new Date().toISOString()
-        }
-      ];
+      // Load sample documents
+      const sampleDocs = SampleDocumentService.getAllDocuments();
       
-      setDocuments(mockDocs);
-      setStats({ documents: 2, chunks: 15 });
+      const docs: Document[] = sampleDocs.map(doc => ({
+        id: doc.id,
+        title: doc.title,
+        type: doc.type,
+        createdAt: new Date().toISOString()
+      }));
+      
+      setDocuments(docs);
+      
+      // Calculate stats (approximate chunks based on content length)
+      const totalChunks = sampleDocs.reduce((total, doc) => {
+        const chunks = Math.ceil(doc.content.length / 500); // Rough estimate
+        return total + chunks;
+      }, 0);
+      
+      setStats({ documents: docs.length, chunks: totalChunks });
     } catch (error) {
       console.error('Error loading documents:', error);
       Alert.alert('Error', 'Failed to load documents');
