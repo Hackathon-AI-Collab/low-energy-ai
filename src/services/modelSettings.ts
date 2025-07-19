@@ -47,13 +47,13 @@ export class ModelSettingsService {
       llmModelType: 'fallback',
       llmModelName: 'gemma-3n-E2B-it',
       
-      // Sentence Transformer defaults
+      // Sentence Transformer defaults - Use Xenova by default
       sentenceTransformerModel: 'xenova',
       sentenceTransformerName: 'Xenova/all-MiniLM-L6-v2',
       sentenceTransformerDimension: 384,
       
-      // Similarity calculation
-      similarityMethod: 'auto',
+      // Similarity calculation - Use cos_sim by default
+      similarityMethod: 'cos_sim',
       
       // Performance
       useCache: true,
