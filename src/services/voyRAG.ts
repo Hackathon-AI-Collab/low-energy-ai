@@ -85,7 +85,38 @@ export class VoyRAG {
       // Use Voy VectorStore to find relevant chunks
       const relevantChunks = await this.voyVectorStore.searchDocuments(query, 3);
       
+      // Debug: Check LLM service status
+      console.log('Voy RAG: Checking LLM service status...');
+      console.log('Voy RAG: LLM service ready:', this.llmService.isModelReady());
+      console.log('Voy RAG: LLM service info:', this.llmService.getModelInfo());
+      
+      // If no relevant chunks found, try using LLM directly
       if (relevantChunks.length === 0) {
+        console.log('Voy RAG: No relevant chunks found, trying LLM service directly');
+        
+        if (this.llmService.isModelReady()) {
+          try {
+            console.log('Voy RAG: Using LLM service for direct response');
+            const llmResponse = await this.llmService.generateResponse(query);
+            
+            return {
+              text: llmResponse.text,
+              confidence: llmResponse.confidence,
+              modelUsed: 'enhanced',
+              processingTime: Date.now() - startTime,
+              contextUsed: [],
+              documentsReferenced: [],
+              similarityScores: [],
+              chunkCount: 0,
+              embeddingModel: this.getEmbeddingModelInfo(),
+              searchEngine: 'local'
+            };
+          } catch (error) {
+            console.warn('LLM service failed for direct response:', error);
+          }
+        }
+        
+        // If LLM also fails, return fallback
         return {
           text: `I don't have specific information about "${query}". However, I can help you with medical guidelines (TCCC), search and rescue procedures, and technical information. Please try asking about these topics.`,
           confidence: 0.3,
@@ -109,11 +140,6 @@ export class VoyRAG {
       
       // Determine search engine used
       const searchEngine = this.determineSearchEngine(relevantChunks);
-      
-      // Debug: Check LLM service status
-      console.log('Voy RAG: Checking LLM service status...');
-      console.log('Voy RAG: LLM service ready:', this.llmService.isModelReady());
-      console.log('Voy RAG: LLM service info:', this.llmService.getModelInfo());
       
       // Try LLM service first
       if (this.llmService.isModelReady()) {

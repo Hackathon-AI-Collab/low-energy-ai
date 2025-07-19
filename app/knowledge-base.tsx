@@ -1,29 +1,45 @@
+import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
     FlatList,
     RefreshControl,
     StyleSheet,
     Text,
-    View,
-    TouchableOpacity
+    View
 } from 'react-native';
+import { DocumentUploadService } from '../src/services/documentUploadService';
 import { SampleDocumentService } from '../src/services/sampleDocuments';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { Colors } from '@/constants/Colors';
 
 interface Document {
   id: string;
   title: string;
   type: string;
   createdAt: string;
+  isSample: boolean;
+}
+
+interface StorageStats {
+  documents: number;
+  chunks: number;
+  totalSize: number;
+  available: boolean;
+  reason?: string;
 }
 
 export default function KnowledgeBaseScreen() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState({ documents: 0, chunks: 0 });
+  const [stats, setStats] = useState<StorageStats>({ 
+    documents: 0, 
+    chunks: 0, 
+    totalSize: 0, 
+    available: true 
+  });
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
   const colorScheme = useColorScheme();
   const themeColors = Colors[colorScheme ?? 'light'];
@@ -34,28 +50,45 @@ export default function KnowledgeBaseScreen() {
 
   const loadDocuments = async () => {
     try {
+      setLoading(true);
+      
       // Load sample documents
       const sampleDocs = SampleDocumentService.getAllDocuments();
       
-      const docs: Document[] = sampleDocs.map(doc => ({
-        id: doc.id,
-        title: doc.title,
-        type: doc.type,
-        createdAt: new Date().toISOString()
-      }));
+      // Load uploaded documents
+      const uploadService = DocumentUploadService.getInstance();
+      await uploadService.initialize();
+      const uploadedDocs = await uploadService.getUploadedDocuments();
       
-      setDocuments(docs);
+      // Combine documents
+      const allDocs: Document[] = [
+        ...sampleDocs.map(doc => ({
+          id: doc.id,
+          title: doc.title,
+          type: doc.type,
+          createdAt: new Date().toISOString(),
+          isSample: true
+        })),
+        ...uploadedDocs.map(doc => ({
+          id: doc.id,
+          title: doc.title,
+          type: doc.type,
+          createdAt: doc.uploadedAt.toISOString(),
+          isSample: false
+        }))
+      ];
       
-      // Calculate stats (approximate chunks based on content length)
-      const totalChunks = sampleDocs.reduce((total, doc) => {
-        const chunks = Math.ceil(doc.content.length / 500); // Rough estimate
-        return total + chunks;
-      }, 0);
+      setDocuments(allDocs);
       
-      setStats({ documents: docs.length, chunks: totalChunks });
+      // Get storage statistics
+      const storageStats = await uploadService.getStorageStats();
+      setStats(storageStats);
+      
     } catch (error) {
       console.error('Error loading documents:', error);
       Alert.alert('Error', 'Failed to load documents');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -73,12 +106,27 @@ export default function KnowledgeBaseScreen() {
     });
   };
 
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
   const renderDocument = ({ item }: { item: Document }) => (
     <View style={styles.documentItem(themeColors)}>
       <View style={styles.documentHeader}>
         <Text style={styles.documentTitle(themeColors)}>{item.title}</Text>
-        <View style={[styles.typeBadge, { backgroundColor: item.type === 'markdown' ? '#007AFF' : '#34C759' }]}>
-          <Text style={styles.typeText}>{item.type.toUpperCase()}</Text>
+        <View style={styles.badgeContainer}>
+          <View style={[styles.typeBadge, { backgroundColor: item.type === 'markdown' ? '#007AFF' : '#34C759' }]}>
+            <Text style={styles.typeText}>{item.type.toUpperCase()}</Text>
+          </View>
+          {item.isSample && (
+            <View style={[styles.sampleBadge, { backgroundColor: '#FF9500' }]}>
+              <Text style={styles.typeText}>SAMPLE</Text>
+            </View>
+          )}
         </View>
       </View>
       <Text style={styles.documentDate(themeColors)}>Added: {formatDate(item.createdAt)}</Text>
@@ -95,12 +143,35 @@ export default function KnowledgeBaseScreen() {
     </View>
   );
 
+  const renderStorageWarning = () => {
+    if (!stats.available) {
+      return (
+        <View style={styles.warningContainer(themeColors)}>
+          <Text style={styles.warningText(themeColors)}>⚠️ Storage Warning</Text>
+          <Text style={styles.warningSubtext(themeColors)}>{stats.reason}</Text>
+        </View>
+      );
+    }
+    return null;
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer(themeColors)}>
+        <ActivityIndicator size="large" color={themeColors.tint} />
+        <Text style={styles.loadingText(themeColors)}>Loading knowledge base...</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container(themeColors)}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Knowledge Base</Text>
         <Text style={styles.headerSubtitle}>Document Management</Text>
       </View>
+
+      {renderStorageWarning()}
 
       <View style={styles.statsContainer(themeColors)}>
         <View style={styles.statItem}>
@@ -112,8 +183,8 @@ export default function KnowledgeBaseScreen() {
           <Text style={styles.statLabel(themeColors)}>Chunks</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber(themeColors)}>✓</Text>
-          <Text style={styles.statLabel(themeColors)}>Model</Text>
+          <Text style={styles.statNumber(themeColors)}>{formatFileSize(stats.totalSize)}</Text>
+          <Text style={styles.statLabel(themeColors)}>Storage</Text>
         </View>
       </View>
 
@@ -137,6 +208,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: themeColors.background,
   }),
+  loadingContainer: (themeColors) => ({
+    flex: 1,
+    backgroundColor: themeColors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }),
+  loadingText: (themeColors) => ({
+    marginTop: 10,
+    fontSize: 16,
+    color: themeColors.text,
+  }),
   header: {
     backgroundColor: '#007AFF',
     padding: 20,
@@ -155,6 +237,24 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 2,
   },
+  warningContainer: (themeColors) => ({
+    backgroundColor: '#FFE5E5',
+    margin: 15,
+    padding: 15,
+    borderRadius: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF3B30',
+  }),
+  warningText: (themeColors) => ({
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FF3B30',
+  }),
+  warningSubtext: (themeColors) => ({
+    fontSize: 14,
+    color: '#FF3B30',
+    marginTop: 5,
+  }),
   statsContainer: (themeColors) => ({
     flexDirection: 'row',
     backgroundColor: themeColors.background,
@@ -198,57 +298,66 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
   },
   documentTitle: (themeColors) => ({
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '600',
     color: themeColors.text,
     flex: 1,
+    marginRight: 10,
   }),
+  badgeContainer: {
+    flexDirection: 'row',
+    gap: 5,
+  },
   typeBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 15,
-    marginLeft: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  sampleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   typeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: 'bold',
     color: '#fff',
   },
   documentDate: (themeColors) => ({
     fontSize: 14,
     color: themeColors.text,
-    opacity: 0.6,
-    marginBottom: 6,
+    opacity: 0.7,
+    marginTop: 8,
   }),
   documentId: (themeColors) => ({
     fontSize: 12,
     color: themeColors.text,
-    opacity: 0.4,
-    fontFamily: 'monospace',
+    opacity: 0.5,
+    marginTop: 4,
   }),
-  emptyListContainer: {
+  emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  emptyState: {
-    alignItems: 'center',
-    padding: 40,
-    opacity: 0.7,
+    paddingVertical: 50,
   },
   emptyStateTitle: (themeColors) => ({
     fontSize: 18,
     fontWeight: 'bold',
     color: themeColors.text,
-    marginBottom: 10,
+    marginBottom: 8,
   }),
   emptyStateSubtitle: (themeColors) => ({
     fontSize: 14,
     color: themeColors.text,
+    opacity: 0.7,
     textAlign: 'center',
-    lineHeight: 20,
+    paddingHorizontal: 20,
   }),
+  emptyListContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
 }); 
