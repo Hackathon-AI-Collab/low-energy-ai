@@ -1,9 +1,12 @@
-import { env, pipeline } from '@xenova/transformers';
+import { cos_sim, env, pipeline } from '@xenova/transformers';
+import { ModelSettingsService } from './modelSettings';
 
 export interface EmbeddingOptions {
   modelName?: string;
   dimension?: number;
   useCache?: boolean;
+  modelPath?: string;
+  similarityMethod?: 'cos_sim' | 'manual' | 'auto';
 }
 
 export class SentenceTransformer {
@@ -12,26 +15,74 @@ export class SentenceTransformer {
   private modelName: string = 'Xenova/all-MiniLM-L6-v2';
   private dimension: number = 384;
   private isModelLoaded: boolean = false;
+  private settings: ModelSettingsService;
+
+  constructor() {
+    this.settings = ModelSettingsService.getInstance();
+  }
 
   async initialize(options?: EmbeddingOptions) {
     try {
       console.log('Initializing Sentence Transformer...');
       
+      // Load settings
+      const settings = this.settings.getSettings();
+      
+      // Override with options if provided
       if (options?.modelName) {
         this.modelName = options.modelName;
+      } else {
+        this.modelName = this.settings.getSentenceTransformerName();
       }
+      
       if (options?.dimension) {
         this.dimension = options.dimension;
+      } else {
+        this.dimension = settings.sentenceTransformerDimension;
       }
       
-      // Set environment for better performance
-      env.allowLocalModels = false;
-      env.allowRemoteModels = true;
-      env.useBrowserCache = true;
+      // Set environment based on settings
+      env.allowLocalModels = settings.allowLocalModels;
+      env.allowRemoteModels = settings.allowRemoteModels;
+      env.useBrowserCache = settings.useBrowserCache;
       
-      // Load the sentence transformer model
-      this.model = await pipeline('feature-extraction', this.modelName);
-      this.isModelLoaded = true;
+      // Determine model type
+      const modelType = this.settings.getSentenceTransformerModel();
+      
+      if (modelType === 'hash') {
+        console.log('Using hash-based embeddings (no model loading)');
+        this.isModelLoaded = false;
+        return;
+      }
+      
+      if (modelType === 'local') {
+        const modelPath = this.settings.getSentenceTransformerPath();
+        if (!modelPath) {
+          console.warn('Local model path not set, falling back to hash-based');
+          this.isModelLoaded = false;
+          return;
+        }
+        
+        // Load local model
+        try {
+          this.model = await pipeline('feature-extraction', modelPath as string);
+          this.isModelLoaded = true;
+          console.log(`Loaded local sentence transformer from: ${modelPath}`);
+        } catch (error) {
+          console.error('Failed to load local model:', error);
+          this.isModelLoaded = false;
+        }
+      } else {
+        // Load Xenova model
+        try {
+          this.model = await pipeline('feature-extraction', this.modelName);
+          this.isModelLoaded = true;
+          console.log(`Loaded Xenova sentence transformer: ${this.modelName}`);
+        } catch (error) {
+          console.error('Failed to load Xenova model:', error);
+          this.isModelLoaded = false;
+        }
+      }
       
       console.log(`Sentence Transformer initialized with model: ${this.modelName}`);
     } catch (error) {
@@ -43,8 +94,8 @@ export class SentenceTransformer {
 
   async generateEmbedding(text: string): Promise<number[]> {
     try {
-      // Check cache first
-      if (this.cache.has(text)) {
+      // Check cache first if enabled
+      if (this.settings.getUseCache() && this.cache.has(text)) {
         return this.cache.get(text)!;
       }
 
@@ -58,8 +109,17 @@ export class SentenceTransformer {
         embedding = this.generateHashEmbedding(text);
       }
 
-      // Cache the result
-      this.cache.set(text, embedding);
+      // Cache the result if enabled
+      if (this.settings.getUseCache()) {
+        this.cache.set(text, embedding);
+        
+        // Limit cache size
+        const maxSize = this.settings.getCacheSize();
+        if (this.cache.size > maxSize) {
+          const firstKey = this.cache.keys().next().value;
+          this.cache.delete(firstKey);
+        }
+      }
       
       return embedding;
     } catch (error) {
@@ -120,7 +180,30 @@ export class SentenceTransformer {
   }
 
   calculateSimilarity(embedding1: number[], embedding2: number[]): number {
-    // Cosine similarity
+    const similarityMethod = this.settings.getSimilarityMethod();
+    
+    // Auto mode: try cos_sim first, fallback to manual
+    if (similarityMethod === 'auto' || similarityMethod === 'cos_sim') {
+      try {
+        // Try to use cos_sim from transformers if available
+        if (typeof cos_sim === 'function') {
+          // Convert to tensors for cos_sim
+          const tensor1 = new Float32Array(embedding1);
+          const tensor2 = new Float32Array(embedding2);
+          
+          // Use cos_sim from transformers
+          const similarity = cos_sim(Array.from(tensor1), Array.from(tensor2));
+          const result = Array.isArray(similarity) ? similarity[0] : similarity;
+          
+          console.log(`Used cos_sim for similarity calculation: ${result}`);
+          return result;
+        }
+      } catch (error) {
+        console.warn('cos_sim failed, using manual cosine similarity:', error);
+      }
+    }
+    
+    // Manual mode or cos_sim fallback
     if (embedding1.length !== embedding2.length) return 0;
     
     let dotProduct = 0;
@@ -135,27 +218,39 @@ export class SentenceTransformer {
     
     if (norm1 === 0 || norm2 === 0) return 0;
     
-    return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+    const result = dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+    console.log(`Used manual cosine similarity: ${result}`);
+    return result;
   }
 
   async batchGenerateEmbeddings(texts: string[]): Promise<number[][]> {
     const embeddings: number[][] = [];
+    const batchSize = this.settings.getSettings().batchSize;
     
-    for (const text of texts) {
-      const embedding = await this.generateEmbedding(text);
-      embeddings.push(embedding);
+    for (let i = 0; i < texts.length; i += batchSize) {
+      const batch = texts.slice(i, i + batchSize);
+      const batchEmbeddings = await Promise.all(
+        batch.map(text => this.generateEmbedding(text))
+      );
+      embeddings.push(...batchEmbeddings);
     }
     
     return embeddings;
   }
 
   getStats() {
+    const settings = this.settings.getSettings();
     return {
       modelLoaded: this.isModelLoaded,
       modelName: this.modelName,
       dimension: this.dimension,
       cacheSize: this.cache.size,
-      cacheHitRate: 0 // Would calculate this in production
+      cacheHitRate: 0, // Would calculate this in production
+      modelType: settings.sentenceTransformerModel,
+      modelPath: settings.sentenceTransformerPath,
+      similarityMethod: settings.similarityMethod,
+      useCache: settings.useCache,
+      cacheSizeLimit: settings.cacheSize
     };
   }
 
@@ -166,5 +261,13 @@ export class SentenceTransformer {
 
   isModelReady(): boolean {
     return this.isModelLoaded;
+  }
+
+  getModelType(): string {
+    return this.settings.getSentenceTransformerModel();
+  }
+
+  getSimilarityMethod(): string {
+    return this.settings.getSimilarityMethod();
   }
 } 

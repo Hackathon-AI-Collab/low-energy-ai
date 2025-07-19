@@ -115,7 +115,7 @@ This layer ensures data integrity, confidentiality, and authenticity across the 
 - Set up the project using =bunx create-expo-app= with TypeScript.
 - Integrate =onnxruntime-react-native= for LLM inference.
 - Convert and optimize target models to ONNX format.
-- Build the RAG pipeline with a sample, bundled knowledge base.
+    - Build the RAG pipeline with a sample, bundled knowledge base.
 - Create the core chat UI with streaming responses.
 - Implement basic document processing and vector storage.
 - Add security layer with document integrity verification.
@@ -130,8 +130,8 @@ This layer ensures data integrity, confidentiality, and authenticity across the 
 - Integrate the sync logic with the knowledge base.
 
 *** Phase 3: P2P Synchronization (Weeks 13-18)
-- Add =react-native-ble-plx= to the development client.
-- Implement the BLE advertising and scanning logic.
+    - Add =react-native-ble-plx= to the development client.
+    - Implement the BLE advertising and scanning logic.
 - Develop the document transfer protocol with encryption.
 - Add mesh networking for multi-hop communication.
 - Implement fallback communication methods.

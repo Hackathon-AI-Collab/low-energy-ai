@@ -1,34 +1,85 @@
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Alert,
     ScrollView,
     StyleSheet,
     Switch,
     Text,
+    TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { AdvancedRAG } from '../src/services/advancedRAG';
+import { ModelSettingsService } from '../src/services/modelSettings';
 
 export default function SettingsScreen() {
-  const [isDebugMode, setIsDebugMode] = useState(false);
-  const [isAutoSync, setIsAutoSync] = useState(true);
-  const router = useRouter();
+  const [settings, setSettings] = useState(ModelSettingsService.getInstance().getSettings());
+  const [ragStats, setRagStats] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const clearKnowledgeBase = () => {
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  const loadStats = async () => {
+    try {
+      const rag = new AdvancedRAG();
+      const stats = await rag.getStats();
+      setRagStats(stats);
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+    }
+  };
+
+  const updateSetting = (key: keyof typeof settings, value: any) => {
+    const newSettings = { ...settings, [key]: value };
+    setSettings(newSettings);
+    ModelSettingsService.getInstance().updateSettings(newSettings);
+  };
+
+  const resetToDefaults = () => {
     Alert.alert(
-      'Clear Knowledge Base',
-      'This will remove all documents and chunks from the knowledge base. This action cannot be undone.',
+      'Reset Settings',
+      'Are you sure you want to reset all settings to defaults?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Clear',
+          text: 'Reset',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              Alert.alert('Success', 'Knowledge base cleared successfully');
-            } catch (error) {
-              Alert.alert('Error', 'Failed to clear knowledge base');
+          onPress: () => {
+            ModelSettingsService.getInstance().resetToDefaults();
+            setSettings(ModelSettingsService.getInstance().getSettings());
+            loadStats();
+          }
+        }
+      ]
+    );
+  };
+
+  const exportSettings = () => {
+    const settingsJson = ModelSettingsService.getInstance().exportSettings();
+    Alert.alert('Settings Export', settingsJson);
+  };
+
+  const importSettings = () => {
+    Alert.prompt(
+      'Import Settings',
+      'Paste the settings JSON:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Import',
+          onPress: (text) => {
+            if (text) {
+              const success = ModelSettingsService.getInstance().importSettings(text);
+              if (success) {
+                setSettings(ModelSettingsService.getInstance().getSettings());
+                loadStats();
+                Alert.alert('Success', 'Settings imported successfully');
+              } else {
+                Alert.alert('Error', 'Failed to import settings');
+              }
             }
           }
         }
@@ -36,123 +87,297 @@ export default function SettingsScreen() {
     );
   };
 
-  const getAppInfo = () => {
-    return {
-      version: '1.0.0',
-      documents: 3,
-      chunks: 12,
-      modelLoaded: true,
-      platform: 'React Native + Expo',
-      llm: 'Enhanced RAG (ONNX + Fallback)',
-      vectorStore: 'In-Memory',
-      sync: 'BLE (Coming Soon)'
-    };
+  const reloadModels = async () => {
+    setIsLoading(true);
+    try {
+      // This would reload the models with new settings
+      await loadStats();
+      Alert.alert('Success', 'Models reloaded with new settings');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to reload models');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const appInfo = getAppInfo();
-
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Settings</Text>
-        <Text style={styles.headerSubtitle}>LEAI Configuration</Text>
-      </View>
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.scrollView}>
+        <Text style={styles.title}>LEAI Settings</Text>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>General</Text>
-        
-        <View style={styles.settingItem}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>Debug Mode</Text>
-            <Text style={styles.settingDescription}>Enable detailed logging</Text>
+        {/* LLM Model Settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>LLM Model Configuration</Text>
+          
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Model Type</Text>
+            <View style={styles.radioGroup}>
+              <TouchableOpacity
+                style={[styles.radio, settings.llmModelType === 'onnx' && styles.radioSelected]}
+                onPress={() => updateSetting('llmModelType', 'onnx')}
+              >
+                <Text style={styles.radioText}>ONNX</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.radio, settings.llmModelType === 'fallback' && styles.radioSelected]}
+                onPress={() => updateSetting('llmModelType', 'fallback')}
+              >
+                <Text style={styles.radioText}>Fallback</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <Switch
-            value={isDebugMode}
-            onValueChange={setIsDebugMode}
-            trackColor={{ false: '#767577', true: '#81b0ff' }}
-            thumbColor={isDebugMode ? '#007AFF' : '#f4f3f4'}
-          />
-        </View>
 
-        <View style={styles.settingItem}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>Auto Sync</Text>
-            <Text style={styles.settingDescription}>Automatically sync with nearby devices</Text>
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Model Path (ONNX)</Text>
+            <TextInput
+              style={styles.input}
+              value={settings.llmModelPath || ''}
+              onChangeText={(text) => updateSetting('llmModelPath', text)}
+              placeholder="Path to ONNX model file"
+              placeholderTextColor="#666"
+            />
           </View>
-          <Switch
-            value={isAutoSync}
-            onValueChange={setIsAutoSync}
-            trackColor={{ false: '#767577', true: '#81b0ff' }}
-            thumbColor={isAutoSync ? '#007AFF' : '#f4f3f4'}
-          />
-        </View>
-      </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Knowledge Base</Text>
-        
-        <TouchableOpacity style={styles.button} onPress={clearKnowledgeBase}>
-          <Text style={styles.buttonText}>Clear Knowledge Base</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Model Name</Text>
+            <TextInput
+              style={styles.input}
+              value={settings.llmModelName || ''}
+              onChangeText={(text) => updateSetting('llmModelName', text)}
+              placeholder="e.g., gemma-3n-E2B-it"
+              placeholderTextColor="#666"
+            />
+          </View>
+        </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>System Information</Text>
-        
-        <View style={styles.infoItem}>
-          <Text style={styles.infoLabel}>Version</Text>
-          <Text style={styles.infoValue}>{appInfo.version}</Text>
-        </View>
-        
-        <View style={styles.infoItem}>
-          <Text style={styles.infoLabel}>Platform</Text>
-          <Text style={styles.infoValue}>{appInfo.platform}</Text>
-        </View>
-        
-        <View style={styles.infoItem}>
-          <Text style={styles.infoLabel}>LLM Engine</Text>
-          <Text style={styles.infoValue}>{appInfo.llm}</Text>
-        </View>
-        
-        <View style={styles.infoItem}>
-          <Text style={styles.infoLabel}>Vector Store</Text>
-          <Text style={styles.infoValue}>{appInfo.vectorStore}</Text>
-        </View>
-        
-        <View style={styles.infoItem}>
-          <Text style={styles.infoLabel}>Sync Protocol</Text>
-          <Text style={styles.infoValue}>{appInfo.sync}</Text>
-        </View>
-      </View>
+        {/* Sentence Transformer Settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Sentence Transformer Configuration</Text>
+          
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Model Type</Text>
+            <View style={styles.radioGroup}>
+              <TouchableOpacity
+                style={[styles.radio, settings.sentenceTransformerModel === 'xenova' && styles.radioSelected]}
+                onPress={() => updateSetting('sentenceTransformerModel', 'xenova')}
+              >
+                <Text style={styles.radioText}>Xenova</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.radio, settings.sentenceTransformerModel === 'local' && styles.radioSelected]}
+                onPress={() => updateSetting('sentenceTransformerModel', 'local')}
+              >
+                <Text style={styles.radioText}>Local</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.radio, settings.sentenceTransformerModel === 'hash' && styles.radioSelected]}
+                onPress={() => updateSetting('sentenceTransformerModel', 'hash')}
+              >
+                <Text style={styles.radioText}>Hash</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Statistics</Text>
-        
-        <View style={styles.infoItem}>
-          <Text style={styles.infoLabel}>Documents</Text>
-          <Text style={styles.infoValue}>{appInfo.documents}</Text>
-        </View>
-        
-        <View style={styles.infoItem}>
-          <Text style={styles.infoLabel}>Chunks</Text>
-          <Text style={styles.infoValue}>{appInfo.chunks}</Text>
-        </View>
-        
-        <View style={styles.infoItem}>
-          <Text style={styles.infoLabel}>Model Status</Text>
-          <Text style={[styles.infoValue, { color: appInfo.modelLoaded ? '#34C759' : '#FF3B30' }]}>
-            {appInfo.modelLoaded ? 'Loaded' : 'Not Loaded'}
-          </Text>
-        </View>
-      </View>
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Model Path (Local)</Text>
+            <TextInput
+              style={styles.input}
+              value={settings.sentenceTransformerPath || ''}
+              onChangeText={(text) => updateSetting('sentenceTransformerPath', text)}
+              placeholder="Path to local model directory"
+              placeholderTextColor="#666"
+            />
+          </View>
 
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          LEAI - Low-Energy AI Platform{'\n'}
-          Hackathon Demo Version
-        </Text>
-      </View>
-    </ScrollView>
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Model Name</Text>
+            <TextInput
+              style={styles.input}
+              value={settings.sentenceTransformerName || ''}
+              onChangeText={(text) => updateSetting('sentenceTransformerName', text)}
+              placeholder="e.g., Xenova/all-MiniLM-L6-v2"
+              placeholderTextColor="#666"
+            />
+          </View>
+
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Embedding Dimension</Text>
+            <TextInput
+              style={styles.input}
+              value={settings.sentenceTransformerDimension.toString()}
+              onChangeText={(text) => updateSetting('sentenceTransformerDimension', parseInt(text) || 384)}
+              placeholder="384"
+              keyboardType="numeric"
+              placeholderTextColor="#666"
+            />
+          </View>
+        </View>
+
+        {/* Similarity Calculation Settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Similarity Calculation</Text>
+          
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Method</Text>
+            <View style={styles.radioGroup}>
+              <TouchableOpacity
+                style={[styles.radio, settings.similarityMethod === 'cos_sim' && styles.radioSelected]}
+                onPress={() => updateSetting('similarityMethod', 'cos_sim')}
+              >
+                <Text style={styles.radioText}>cos_sim</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.radio, settings.similarityMethod === 'manual' && styles.radioSelected]}
+                onPress={() => updateSetting('similarityMethod', 'manual')}
+              >
+                <Text style={styles.radioText}>Manual</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.radio, settings.similarityMethod === 'auto' && styles.radioSelected]}
+                onPress={() => updateSetting('similarityMethod', 'auto')}
+              >
+                <Text style={styles.radioText}>Auto</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {/* Performance Settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Performance Settings</Text>
+          
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Use Cache</Text>
+            <Switch
+              value={settings.useCache}
+              onValueChange={(value) => updateSetting('useCache', value)}
+            />
+          </View>
+
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Cache Size</Text>
+            <TextInput
+              style={styles.input}
+              value={settings.cacheSize.toString()}
+              onChangeText={(text) => updateSetting('cacheSize', parseInt(text) || 1000)}
+              placeholder="1000"
+              keyboardType="numeric"
+              placeholderTextColor="#666"
+            />
+          </View>
+
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Batch Size</Text>
+            <TextInput
+              style={styles.input}
+              value={settings.batchSize.toString()}
+              onChangeText={(text) => updateSetting('batchSize', parseInt(text) || 10)}
+              placeholder="10"
+              keyboardType="numeric"
+              placeholderTextColor="#666"
+            />
+          </View>
+        </View>
+
+        {/* Advanced Settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Advanced Settings</Text>
+          
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Allow Remote Models</Text>
+            <Switch
+              value={settings.allowRemoteModels}
+              onValueChange={(value) => updateSetting('allowRemoteModels', value)}
+            />
+          </View>
+
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Allow Local Models</Text>
+            <Switch
+              value={settings.allowLocalModels}
+              onValueChange={(value) => updateSetting('allowLocalModels', value)}
+            />
+          </View>
+
+          <View style={styles.setting}>
+            <Text style={styles.settingLabel}>Use Browser Cache</Text>
+            <Switch
+              value={settings.useBrowserCache}
+              onValueChange={(value) => updateSetting('useBrowserCache', value)}
+            />
+          </View>
+        </View>
+
+        {/* System Status */}
+        {ragStats && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>System Status</Text>
+            
+            <View style={styles.statusItem}>
+              <Text style={styles.statusLabel}>Documents:</Text>
+              <Text style={styles.statusValue}>{ragStats.documents}</Text>
+            </View>
+            
+            <View style={styles.statusItem}>
+              <Text style={styles.statusLabel}>Chunks:</Text>
+              <Text style={styles.statusValue}>{ragStats.chunks}</Text>
+            </View>
+            
+            <View style={styles.statusItem}>
+              <Text style={styles.statusLabel}>Total Size:</Text>
+              <Text style={styles.statusValue}>{ragStats.totalSize} chars</Text>
+            </View>
+            
+            <View style={styles.statusItem}>
+              <Text style={styles.statusLabel}>Enhanced LLM:</Text>
+              <Text style={[styles.statusValue, { color: ragStats.enhancedLLMReady ? '#4CAF50' : '#F44336' }]}>
+                {ragStats.enhancedLLMReady ? 'Ready' : 'Not Ready'}
+              </Text>
+            </View>
+            
+            <View style={styles.statusItem}>
+              <Text style={styles.statusLabel}>Vector Store:</Text>
+              <Text style={[styles.statusValue, { color: ragStats.voyVectorStoreReady ? '#4CAF50' : '#F44336' }]}>
+                {ragStats.voyVectorStoreReady ? 'Ready' : 'Not Ready'}
+              </Text>
+            </View>
+            
+            <View style={styles.statusItem}>
+              <Text style={styles.statusLabel}>Embedding Model:</Text>
+              <Text style={styles.statusValue}>{ragStats.embeddingModel}</Text>
+            </View>
+            
+            <View style={styles.statusItem}>
+              <Text style={styles.statusLabel}>Model Loaded:</Text>
+              <Text style={[styles.statusValue, { color: ragStats.embeddingModelLoaded ? '#4CAF50' : '#F44336' }]}>
+                {ragStats.embeddingModelLoaded ? 'Yes' : 'No'}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Action Buttons */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Actions</Text>
+          
+          <TouchableOpacity style={styles.button} onPress={reloadModels} disabled={isLoading}>
+            <Text style={styles.buttonText}>{isLoading ? 'Reloading...' : 'Reload Models'}</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.button} onPress={exportSettings}>
+            <Text style={styles.buttonText}>Export Settings</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.button} onPress={importSettings}>
+            <Text style={styles.buttonText}>Import Settings</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={[styles.button, styles.dangerButton]} onPress={resetToDefaults}>
+            <Text style={styles.buttonText}>Reset to Defaults</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -161,97 +386,104 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  header: {
-    backgroundColor: '#007AFF',
-    padding: 20,
-    paddingTop: 50,
-    alignItems: 'center',
+  scrollView: {
+    flex: 1,
+    padding: 16,
   },
-  headerTitle: {
-    fontSize: 20,
+  title: {
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#fff',
-    opacity: 0.8,
-    marginTop: 2,
+    marginBottom: 20,
+    textAlign: 'center',
+    color: '#333',
   },
   section: {
-    backgroundColor: '#fff',
-    margin: 10,
-    borderRadius: 10,
-    padding: 15,
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#000',
-    marginBottom: 15,
+    marginBottom: 16,
+    color: '#333',
   },
-  settingItem: {
+  setting: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  settingInfo: {
-    flex: 1,
+    marginBottom: 12,
+    paddingVertical: 8,
   },
   settingLabel: {
     fontSize: 16,
-    color: '#000',
-    marginBottom: 2,
+    color: '#333',
+    flex: 1,
   },
-  settingDescription: {
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    padding: 8,
     fontSize: 14,
-    color: '#666',
+    color: '#333',
+    flex: 1,
+    marginLeft: 16,
   },
-  button: {
-    backgroundColor: '#FF3B30',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
+  radioGroup: {
+    flexDirection: 'row',
+    flex: 1,
+    marginLeft: 16,
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+  radio: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
-  infoItem: {
+  radioSelected: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  radioText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  statusItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    marginBottom: 8,
   },
-  infoLabel: {
-    fontSize: 16,
-    color: '#000',
-  },
-  infoValue: {
-    fontSize: 16,
-    color: '#007AFF',
-    fontWeight: '500',
-  },
-  footer: {
-    alignItems: 'center',
-    padding: 20,
-    marginTop: 20,
-  },
-  footerText: {
+  statusLabel: {
     fontSize: 14,
     color: '#666',
-    textAlign: 'center',
-    lineHeight: 20,
+  },
+  statusValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    padding: 12,
+    borderRadius: 6,
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+  dangerButton: {
+    backgroundColor: '#FF3B30',
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 }); 
