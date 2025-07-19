@@ -39,9 +39,9 @@ export default function ChatScreen() {
     try {
       console.log('Initializing LEAI app...');
       
-      // Initialize Advanced RAG
-      const { AdvancedRAG } = await import('../src/services/advancedRAG');
-      const rag = new AdvancedRAG();
+      // Initialize Voy RAG with Sentence Transformer + cos_sim
+      const { VoyRAG } = await import('../src/services/voyRAG');
+      const rag = new VoyRAG();
       await rag.initialize();
       setAdvancedRAG(rag);
       
@@ -50,7 +50,7 @@ export default function ChatScreen() {
       // Add welcome message
       const welcomeMessage: Message = {
         id: 'welcome',
-        text: 'Hello! I\'m LEAI, your low-energy AI assistant. I can help you with medical guidelines, search and rescue procedures, and technical information. What would you like to know?',
+        text: 'Hello! I\'m LEAI, your low-energy AI assistant with advanced semantic search. I can help you with medical guidelines, search and rescue procedures, and technical information. I use sentence transformers and cos_sim for better understanding. What would you like to know?',
         isUser: false,
         timestamp: new Date()
       };
