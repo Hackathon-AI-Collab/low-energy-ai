@@ -110,7 +110,8 @@ export default function ChatScreen() {
           modelUsed: ragResponse.modelUsed,
           confidence: ragResponse.confidence,
           processingTime: ragResponse.processingTime,
-          documentsReferenced: ragResponse.documentsReferenced
+          documentsReferenced: ragResponse.documentsReferenced,
+          embeddingModel: ragResponse.embeddingModel
         });
       } catch (error) {
         console.error('Error processing message:', error);

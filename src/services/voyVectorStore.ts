@@ -138,6 +138,8 @@ export class VoyVectorStore {
 
   async searchDocuments(query: string, limit: number = 5): Promise<DocumentChunk[]> {
     try {
+      console.log(`Searching for: "${query}" with ${this.documents.size} documents and ${this.chunks.size} chunks`);
+      
       const queryEmbedding = await this.sentenceTransformer.generateEmbedding(query);
       const results: SearchResult[] = [];
 
@@ -150,7 +152,7 @@ export class VoyVectorStore {
           );
           
           results.push({
-            id: `${docId}_${chunkId}`,
+            id: chunkId, // Use the chunk ID directly
             content: chunk.content,
             metadata: {
               documentId: docId,
@@ -165,10 +167,13 @@ export class VoyVectorStore {
       // Sort by similarity and return top K results
       results.sort((a, b) => b.metadata.similarity - a.metadata.similarity);
       
+      console.log(`Found ${results.length} results, top similarity: ${results.length > 0 ? results[0].metadata.similarity.toFixed(3) : 'N/A'}`);
+      
       // Convert to DocumentChunk format
       const chunks: DocumentChunk[] = [];
       for (const result of results.slice(0, limit)) {
         const chunk = this.chunks.get(result.id);
+        
         if (chunk) {
           chunks.push({
             ...chunk,
@@ -177,9 +182,12 @@ export class VoyVectorStore {
               similarityScore: result.metadata.similarity
             }
           });
+        } else {
+          console.warn(`Chunk not found for ID: ${result.id}`);
         }
       }
       
+      console.log(`Returning ${chunks.length} chunks for query: "${query}"`);
       return chunks;
 
     } catch (error) {
@@ -404,5 +412,43 @@ export class VoyVectorStore {
 
   getSentenceTransformer(): SentenceTransformer {
     return this.sentenceTransformer;
+  }
+
+  async reinitializeSentenceTransformer(): Promise<void> {
+    try {
+      console.log('Reinitializing sentence transformer in Voy Vector Store...');
+      await this.sentenceTransformer.reinitialize();
+      
+      // Re-embed all existing documents with the new sentence transformer
+      await this.reembedAllDocuments();
+      
+      console.log('Sentence transformer reinitialized in Voy Vector Store');
+    } catch (error) {
+      console.error('Failed to reinitialize sentence transformer in Voy Vector Store:', error);
+    }
+  }
+
+  private async reembedAllDocuments(): Promise<void> {
+    try {
+      console.log('Re-embedding all documents with updated sentence transformer...');
+      
+      for (const [docId, doc] of this.documents.entries()) {
+        for (const [chunkId, chunk] of doc.chunks.entries()) {
+          // Generate new embedding for the chunk
+          const newEmbedding = await this.sentenceTransformer.generateEmbedding(chunk.content);
+          
+          // Update the chunk with new embedding
+          chunk.embedding = newEmbedding;
+          chunk.updatedAt = new Date();
+          
+          // Update in the main chunks map
+          this.chunks.set(chunkId, chunk);
+        }
+      }
+      
+      console.log(`Re-embedded ${this.chunks.size} chunks successfully`);
+    } catch (error) {
+      console.error('Failed to re-embed documents:', error);
+    }
   }
 } 

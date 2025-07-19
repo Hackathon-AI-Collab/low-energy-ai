@@ -293,6 +293,25 @@ For more specific guidance, please ask about medical procedures, search and resc
 
   private getEmbeddingModelInfo(): string {
     const stats = this.voyVectorStore.getSentenceTransformer().getStats();
-    return stats.modelLoaded ? stats.modelName : 'hash-based';
+    const currentStatus = this.voyVectorStore.getSentenceTransformer().getCurrentModelStatus();
+    
+    if (currentStatus.isModelLoaded) {
+      return `${currentStatus.modelName} (ONNX)`;
+    } else if (currentStatus.modelType === 'local') {
+      return `${currentStatus.modelName} (Local - Not Loaded)`;
+    } else {
+      return `${currentStatus.modelName} (${currentStatus.modelType})`;
+    }
+  }
+
+  // Method to reinitialize sentence transformer after model download
+  async reinitializeSentenceTransformer(): Promise<void> {
+    try {
+      console.log('Reinitializing sentence transformer in Voy RAG...');
+      await this.voyVectorStore.reinitializeSentenceTransformer();
+      console.log('Sentence transformer reinitialized successfully');
+    } catch (error) {
+      console.error('Failed to reinitialize sentence transformer:', error);
+    }
   }
 } 
