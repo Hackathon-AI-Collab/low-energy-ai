@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export interface ModelSettings {
   // LLM Model Settings
   llmModelPath?: string;
-  llmModelType: 'onnx' | 'fallback';
+  llmModelType: 'gguf' | 'onnx' | 'fallback';
   llmModelName?: string;
   
   // Sentence Transformer Settings
@@ -75,8 +75,8 @@ export class ModelSettingsService {
 
   private getDefaultSettings(): ModelSettings {
     return {
-      // LLM defaults - Use fallback mode since no real LLM ONNX models are available
-      llmModelType: 'fallback',
+      // LLM defaults - Use GGUF mode for llama.rn integration
+      llmModelType: 'gguf',
       llmModelName: 'simulated-llm',
       llmModelPath: undefined, // Don't set a path to avoid loading non-existent files
       
@@ -148,7 +148,7 @@ export class ModelSettingsService {
     return this.settings.llmModelPath;
   }
 
-  setLLMModelType(type: 'onnx' | 'fallback'): void {
+  setLLMModelType(type: 'gguf' | 'onnx' | 'fallback'): void {
     console.log('Setting LLM model type:', type);
     this.settings.llmModelType = type;
     this.saveSettings().catch(error => {
@@ -156,7 +156,7 @@ export class ModelSettingsService {
     });
   }
 
-  getLLMModelType(): 'onnx' | 'fallback' {
+  getLLMModelType(): 'gguf' | 'onnx' | 'fallback' {
     return this.settings.llmModelType;
   }
 

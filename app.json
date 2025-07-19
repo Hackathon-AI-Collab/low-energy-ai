@@ -16,7 +16,6 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#007AFF"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.anonymous.leaiplatform"
     },
     "web": {
@@ -24,8 +23,19 @@
       "output": "static"
     },
     "plugins": [
+      "./plugins/withLlama.js",
       "expo-router",
       "expo-dev-client",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraMavenRepos": [
+              "https://www.jitpack.io"
+            ]
+          }
+        }
+      ],
       [
         "expo-splash-screen",
         {
