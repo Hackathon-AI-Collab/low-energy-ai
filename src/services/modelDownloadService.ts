@@ -143,11 +143,11 @@ export class ModelDownloadService {
         this.settings.setSentenceTransformerPath(filePath);
         this.settings.setSentenceTransformerModel('local');
         console.log(`Updated sentence transformer settings: ${filePath}`);
-      } else if (modelName.includes('gemma') || modelName.includes('Gemma-3-1b-it')) {
+      } else if (modelName.includes('gemma') || modelName.includes('Gemma-3-1b-it') || modelName.includes('GQA') || modelName.includes('int8')) {
         // Gemma model is a real ONNX model, so we can set the path
         this.settings.setLLMModelPath(filePath);
         this.settings.setLLMModelType('onnx');
-        console.log(`Updated LLM settings for Gemma model: ${filePath}`);
+        console.log(`Updated LLM settings for Gemma GQA Int8 model: ${filePath}`);
       } else if (modelName.includes('llm')) {
         // Only set LLM model path if the model actually exists and is valid
         // For now, we'll use simulated ONNX mode since real LLM models aren't available
@@ -170,7 +170,7 @@ export class ModelDownloadService {
     }
     
     // If this is an LLM model, we should reinitialize the Voy RAG (which includes LLM service)
-    if (modelName.includes('llm') || modelName.includes('gemma') || modelName.includes('Gemma-3-1b-it')) {
+    if (modelName.includes('llm') || modelName.includes('gemma') || modelName.includes('Gemma-3-1b-it') || modelName.includes('GQA') || modelName.includes('int8')) {
       this.reinitializeVoyRAG();
     }
   }
@@ -199,11 +199,11 @@ export class ModelDownloadService {
         size: 90 * 1024 * 1024 // ~90MB
       },
       {
-        name: 'Gemma-3-1b-it (LLM) - ONNX',
+        name: 'Gemma-3-1b-it-GQA (LLM) - ONNX Int8',
         type: 'llm',
-        url: 'https://huggingface.co/onnx-community/gemma-3-1b-it-ONNX/resolve/main/onnx/model_q4f16.onnx',
-        fileName: 'gemma-3-1b-it.onnx',
-        size: 998 * 1024 * 1024 // ~998MB
+        url: 'https://huggingface.co/onnx-community/gemma-3-1b-it-ONNX-GQA/resolve/main/onnx/model_int8.onnx',
+        fileName: 'gemma-3-1b-it-gqa-int8.onnx',
+        size: 1097 * 1024 * 1024 // ~1.07GB
       }
     ];
   }
