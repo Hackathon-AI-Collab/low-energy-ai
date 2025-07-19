@@ -36,4 +36,11 @@ config.resolver.alias = {
 // Add resolver extensions to handle different file types
 config.resolver.sourceExts = ['js', 'jsx', 'json', 'ts', 'tsx', 'cjs'];
 
+// Add asset extensions to handle markdown files
+config.resolver.assetExts = [
+  ...config.resolver.assetExts,
+  'md',
+  'txt'
+];
+
 module.exports = config; 

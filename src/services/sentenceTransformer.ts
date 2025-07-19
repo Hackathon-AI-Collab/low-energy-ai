@@ -172,29 +172,50 @@ export class SentenceTransformer {
       // Check if we can use ONNX Runtime for model inference
       if (modelType === 'local') {
         const modelPath = this.settings.getSentenceTransformerPath();
+        console.log('🔍 Local model loading attempt:');
+        console.log(`  - Model type: ${modelType}`);
+        console.log(`  - Model path: ${modelPath}`);
+        console.log(`  - Model path exists: ${!!modelPath}`);
+        
         if (!modelPath) {
           console.warn('Local model path not set, using hash-based embeddings');
           this.isModelLoaded = false;
         } else {
           // Try to load ONNX Runtime if not already loaded
+          console.log('🔄 Loading ONNX Runtime...');
           await loadONNXRuntime();
+          
+          console.log('🔍 ONNX Runtime loading result:');
+          console.log(`  - InferenceSession available: ${!!InferenceSession}`);
+          console.log(`  - Tensor available: ${!!Tensor}`);
+          console.log(`  - onnxRuntimeLoaded: ${onnxRuntimeLoaded}`);
           
           if (!InferenceSession) {
             console.warn('ONNX Runtime not available, using hash-based embeddings');
             this.isModelLoaded = false;
           } else {
             try {
+              console.log('🔄 Creating ONNX model session...');
+              console.log(`  - Model path: ${modelPath}`);
+              console.log(`  - Model path type: ${typeof modelPath}`);
+              
               this.model = await InferenceSession.create(modelPath as string);
               this.isModelLoaded = true;
-              console.log(`Loaded local ONNX model from: ${modelPath}`);
+              console.log(`✅ Loaded local ONNX model from: ${modelPath}`);
+              console.log('🔍 Model session details:');
+              console.log(`  - Model input names: ${this.model.inputNames}`);
+              console.log(`  - Model output names: ${this.model.outputNames}`);
             } catch (error) {
-              console.error('Failed to load local ONNX model:', error);
+              console.error('❌ Failed to load local ONNX model:', error);
+              console.error('❌ Error details:', error instanceof Error ? error.message : String(error));
+              console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
               this.isModelLoaded = false;
             }
           }
         }
       } else {
         console.log('Using hash-based embeddings (no local model specified)');
+        console.log(`  - Model type: ${modelType}`);
         this.isModelLoaded = false;
       }
       
@@ -207,63 +228,227 @@ export class SentenceTransformer {
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
-    // If we have a model and tokenizer, try to use ONNX Runtime
+    console.log('🔍 Sentence Transformer: Starting embedding generation...');
+    console.log(`📝 Text length: ${text.length} characters`);
+    console.log(`📝 Text preview: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+    
+    // Detailed model status check
+    console.log('🔍 Detailed Model Status Check:');
+    console.log(`  - isModelLoaded: ${this.isModelLoaded}`);
+    console.log(`  - model exists: ${!!this.model}`);
+    console.log(`  - tokenizer exists: ${!!this.tokenizer}`);
+    console.log(`  - modelName: ${this.modelName}`);
+    console.log(`  - dimension: ${this.dimension}`);
+    console.log(`  - modelType: ${this.settings.getSentenceTransformerModel()}`);
+    console.log(`  - modelPath: ${this.settings.getSentenceTransformerPath()}`);
+    
+    // Check if we have a model and tokenizer
     if (this.isModelLoaded && this.model && this.tokenizer) {
+      console.log('✅ Using ONNX Runtime model for embedding generation');
+      console.log(`🤖 Model: ${this.modelName}`);
+      console.log(`📏 Expected dimension: ${this.dimension}`);
+      
       // Ensure ONNX Runtime is loaded
+      console.log('🔄 Loading ONNX Runtime...');
       await loadONNXRuntime();
       
+      console.log('🔍 ONNX Runtime Status:');
+      console.log(`  - InferenceSession available: ${!!InferenceSession}`);
+      console.log(`  - Tensor available: ${!!Tensor}`);
+      console.log(`  - onnxRuntimeLoaded: ${onnxRuntimeLoaded}`);
+      
       if (!Tensor) {
-        console.warn('ONNX Runtime Tensor not available, falling back to hash embeddings');
+        console.warn('⚠️ ONNX Runtime Tensor not available, falling back to hash embeddings');
+        console.log('🔍 ONNX Runtime Error Details:');
+        try {
+          const onnxRuntime = require('onnxruntime-react-native');
+          console.log(`  - onnxruntime-react-native loaded: ${!!onnxRuntime}`);
+          console.log(`  - InferenceSession: ${!!onnxRuntime.InferenceSession}`);
+          console.log(`  - Tensor: ${!!onnxRuntime.Tensor}`);
+        } catch (error) {
+          console.error('  - Failed to require onnxruntime-react-native:', error);
+        }
         return this.generateHashEmbedding(text);
       }
+      
       try {
+        console.log('🔄 Tokenizing text...');
         // Tokenize the text using local tokenizer
         const inputs = await this.tokenizer.tokenize(text);
+        console.log(`🔤 Tokenization complete. Input shape: ${inputs.input_ids.dims.join('x')}`);
+        console.log(`🔤 Input data type: ${inputs.input_ids.data.constructor.name}`);
+        console.log(`🔤 Input data length: ${inputs.input_ids.data.length}`);
 
-        // Convert to ONNX format
-        const inputTensor = new Tensor('int64', inputs.input_ids.data, inputs.input_ids.dims);
-        const attentionMask = new Tensor('int64', inputs.attention_mask.data, inputs.attention_mask.dims);
-        const tokenTypeIds = new Tensor('int64', inputs.token_type_ids.data, inputs.token_type_ids.dims);
+        console.log('🔄 Converting to ONNX format...');
+        // Convert to ONNX format with detailed error checking
+        let inputTensor, attentionMask, tokenTypeIds;
+        
+        try {
+          inputTensor = new Tensor('int64', inputs.input_ids.data, inputs.input_ids.dims);
+          console.log('✅ Input tensor created');
+        } catch (error) {
+          console.error('❌ Failed to create input tensor:', error);
+          throw error;
+        }
+        
+        try {
+          attentionMask = new Tensor('int64', inputs.attention_mask.data, inputs.attention_mask.dims);
+          console.log('✅ Attention mask tensor created');
+        } catch (error) {
+          console.error('❌ Failed to create attention mask tensor:', error);
+          throw error;
+        }
+        
+        try {
+          tokenTypeIds = new Tensor('int64', inputs.token_type_ids.data, inputs.token_type_ids.dims);
+          console.log('✅ Token type IDs tensor created');
+        } catch (error) {
+          console.error('❌ Failed to create token type IDs tensor:', error);
+          throw error;
+        }
+        
+        console.log('✅ ONNX tensors created successfully');
 
+        console.log('🔄 Running model inference...');
+        console.log('🔍 Model input keys:', Object.keys({
+          input_ids: inputTensor,
+          attention_mask: attentionMask,
+          token_type_ids: tokenTypeIds
+        }));
+        
         // Run inference
         const results = await this.model.run({
           input_ids: inputTensor,
           attention_mask: attentionMask,
           token_type_ids: tokenTypeIds
         });
+        console.log('✅ Model inference completed');
+        console.log('🔍 Model output keys:', Object.keys(results));
 
         // Extract embeddings (assuming the model outputs embeddings directly)
         const embeddings = results.embeddings || results.last_hidden_state;
-        const embeddingArray = Array.from(embeddings.data as Float32Array);
+        console.log('🔍 Embedding tensor type:', embeddings.constructor.name);
+        console.log('🔍 Embedding tensor dims:', embeddings.dims);
+        console.log('🔍 Embedding tensor data type:', embeddings.data.constructor.name);
+        
+        // Handle different tensor shapes
+        let embeddingArray: number[];
+        
+        if (embeddings.dims.length === 3) {
+          // 3D tensor: [batch_size, sequence_length, hidden_dim]
+          // Extract the CLS token embedding (first token) or mean pooling
+          console.log('🔍 Processing 3D tensor output...');
+          const [batchSize, seqLength, hiddenDim] = embeddings.dims;
+          console.log(`📊 Tensor shape: [${batchSize}, ${seqLength}, ${hiddenDim}]`);
+          
+          const rawData = Array.from(embeddings.data as Float32Array);
+          console.log(`📊 Raw tensor data length: ${rawData.length}`);
+          
+          // Extract the CLS token embedding (first token in sequence)
+          // For [1, 512, 384], we want the first 384 values (CLS token)
+          embeddingArray = rawData.slice(0, hiddenDim);
+          console.log(`📊 Extracted CLS token embedding length: ${embeddingArray.length}`);
+          
+          // Alternative: Use mean pooling across sequence length
+          // This averages the embeddings across all tokens
+          if (seqLength > 1) {
+            console.log('🔍 Using mean pooling across sequence...');
+            const pooledEmbedding = new Array(hiddenDim).fill(0);
+            
+            for (let i = 0; i < hiddenDim; i++) {
+              let sum = 0;
+              for (let j = 0; j < seqLength; j++) {
+                const index = j * hiddenDim + i;
+                sum += rawData[index];
+              }
+              pooledEmbedding[i] = sum / seqLength;
+            }
+            
+            embeddingArray = pooledEmbedding;
+            console.log(`📊 Mean pooled embedding length: ${embeddingArray.length}`);
+          }
+          
+        } else if (embeddings.dims.length === 2) {
+          // 2D tensor: [batch_size, hidden_dim] - already the right shape
+          console.log('🔍 Processing 2D tensor output...');
+          embeddingArray = Array.from(embeddings.data as Float32Array);
+          console.log(`📊 2D tensor embedding length: ${embeddingArray.length}`);
+          
+        } else {
+          // 1D tensor or other shape - flatten and use
+          console.log('🔍 Processing 1D tensor output...');
+          embeddingArray = Array.from(embeddings.data as Float32Array);
+          console.log(`📊 1D tensor embedding length: ${embeddingArray.length}`);
+        }
+        
+        console.log(`📊 Final embedding array length: ${embeddingArray.length}`);
 
         // Normalize to unit vector
         const magnitude = Math.sqrt(embeddingArray.reduce((sum, val) => sum + val * val, 0));
-        return embeddingArray.map(val => val / magnitude);
+        const normalizedEmbedding = embeddingArray.map(val => val / magnitude);
+        console.log(`📏 Normalized embedding dimension: ${normalizedEmbedding.length}`);
+        console.log(`📊 Embedding magnitude: ${magnitude.toFixed(6)}`);
+        console.log(`📊 First 5 values: [${normalizedEmbedding.slice(0, 5).map(v => v.toFixed(4)).join(', ')}]`);
+        
+        console.log('✅ ONNX model embedding generation successful');
+        return normalizedEmbedding;
 
       } catch (error) {
-        console.error('Error generating embedding with ONNX model:', error);
+        console.error('❌ Error generating embedding with ONNX model:', error);
+        console.error('❌ Error details:', error instanceof Error ? error.message : String(error));
+        console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+        console.log('🔄 Falling back to hash-based embedding...');
         return this.generateHashEmbedding(text);
       }
+    } else {
+      console.log('⚠️ Model not loaded, using hash-based embedding');
+      console.log(`🔧 Model loaded: ${this.isModelLoaded}`);
+      console.log(`🔧 Model available: ${!!this.model}`);
+      console.log(`🔧 Tokenizer available: ${!!this.tokenizer}`);
+      
+      // Additional debugging for model loading issues
+      if (!this.isModelLoaded) {
+        console.log('🔍 Model loading failed. Checking settings...');
+        console.log(`  - Model type: ${this.settings.getSentenceTransformerModel()}`);
+        console.log(`  - Model path: ${this.settings.getSentenceTransformerPath()}`);
+        console.log(`  - Model name: ${this.settings.getSentenceTransformerName()}`);
+      }
+      
+      return this.generateHashEmbedding(text);
     }
-
-    // Fallback to hash-based embedding
-    return this.generateHashEmbedding(text);
   }
 
   private generateHashEmbedding(text: string): number[] {
-    // Enhanced hash-based embedding
-    const hash = this.simpleHash(text);
+    console.log('🔧 Using hash-based embedding generation');
+    console.log(`📝 Input text length: ${text.length} characters`);
+    
+    // Simple hash-based embedding for fallback
+    const words = text.toLowerCase().split(/\s+/);
     const embedding = new Array(this.dimension).fill(0);
     
-    // Use hash to generate pseudo-random but deterministic embedding
-    for (let i = 0; i < this.dimension; i++) {
-      const seed = hash + i * 31;
-      embedding[i] = Math.sin(seed) * 0.5 + 0.5; // Normalize to [0,1]
+    console.log(`🔤 Processing ${words.length} words`);
+    
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const hash = this.simpleHash(word);
+      
+      // Distribute the hash across the embedding dimensions
+      for (let j = 0; j < this.dimension; j++) {
+        const position = (hash + j * 31) % this.dimension;
+        embedding[position] += Math.sin(hash + j) * 0.1;
+      }
     }
     
-    // Normalize to unit vector
+    // Normalize the embedding
     const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
-    return embedding.map(val => val / magnitude);
+    const normalizedEmbedding = embedding.map(val => val / magnitude);
+    
+    console.log(`📏 Hash embedding dimension: ${normalizedEmbedding.length}`);
+    console.log(`📊 Hash embedding magnitude: ${magnitude.toFixed(6)}`);
+    console.log(`📊 First 5 values: [${normalizedEmbedding.slice(0, 5).map(v => v.toFixed(4)).join(', ')}]`);
+    console.log('✅ Hash-based embedding generation completed');
+    
+    return normalizedEmbedding;
   }
 
   private simpleHash(str: string): number {

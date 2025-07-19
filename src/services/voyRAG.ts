@@ -1,6 +1,5 @@
 import { LLMService } from './llmService';
 import { ModelSettingsService } from './modelSettings';
-import { SampleDocumentService } from './sampleDocuments';
 import { DocumentChunk, VoyVectorStore } from './voyVectorStore';
 
 export interface VoyRAGResponse {
@@ -19,7 +18,6 @@ export interface VoyRAGResponse {
 export class VoyRAG {
   private llmService: LLMService;
   private voyVectorStore: VoyVectorStore;
-  private documents: any[] = [];
   private settings: ModelSettingsService;
   private settingsCallback: (settings: any) => void;
 
@@ -60,14 +58,6 @@ export class VoyRAG {
         this.llmService.initialize(),
         this.voyVectorStore.initialize()
       ]);
-      
-      // Load documents
-      this.documents = SampleDocumentService.getAllDocuments();
-      
-      // Add documents to Voy vector store
-      for (const doc of this.documents) {
-        await this.voyVectorStore.addDocument(doc.id, doc.title, doc.content, doc.type);
-      }
       
       console.log('Voy RAG Pipeline initialized successfully');
     } catch (error) {
@@ -133,7 +123,7 @@ export class VoyRAG {
       
       // Prepare context from relevant chunks
       const context = this.prepareContextFromChunks(relevantChunks);
-      const documentTitles = this.getDocumentTitles(relevantChunks);
+      const documentTitles = await this.getDocumentTitles(relevantChunks);
       const similarityScores = relevantChunks.map(chunk => 
         chunk.metadata.similarityScore || 0
       );
@@ -206,17 +196,24 @@ export class VoyRAG {
     ).join('\n\n');
   }
 
-  private getDocumentTitles(chunks: DocumentChunk[]): string[] {
+  private async getDocumentTitles(chunks: DocumentChunk[]): Promise<string[]> {
     const titles = new Set<string>();
     for (const chunk of chunks) {
-      titles.add(this.getDocumentTitle(chunk.documentId));
+      const title = await this.getDocumentTitle(chunk.documentId);
+      titles.add(title);
     }
     return Array.from(titles);
   }
 
-  private getDocumentTitle(documentId: string): string {
-    const doc = this.documents.find(d => d.id === documentId);
-    return doc ? doc.title : 'Unknown Document';
+  private async getDocumentTitle(documentId: string): Promise<string> {
+    try {
+      const documents = await this.voyVectorStore.getAllDocuments();
+      const doc = documents.find(d => d.id === documentId);
+      return doc ? doc.title : 'Unknown Document';
+    } catch (error) {
+      console.error('Error getting document title:', error);
+      return 'Unknown Document';
+    }
   }
 
   private determineSearchEngine(chunks: DocumentChunk[]): 'voy' | 'local' {
@@ -307,15 +304,6 @@ For more specific guidance, please ask about medical procedures, search and resc
   async addDocument(documentId: string, title: string, content: string): Promise<void> {
     try {
       await this.voyVectorStore.addDocument(documentId, title, content);
-      
-      // Add to local documents array
-      this.documents.push({
-        id: documentId,
-        title,
-        content,
-        type: 'markdown'
-      });
-      
       console.log(`Added document: ${title}`);
     } catch (error) {
       console.error('Error adding document:', error);

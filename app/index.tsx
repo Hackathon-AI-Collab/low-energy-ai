@@ -1,22 +1,22 @@
+import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
+    Image,
     KeyboardAvoidingView,
     Platform,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
-    View,
-    Image
+    View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { simpleAppTest } from '../src/services/simpleAppTest';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { Colors } from '@/constants/Colors';
 
 interface Message {
   id: string;
@@ -45,7 +45,19 @@ export default function ChatScreen() {
     try {
       console.log('Initializing LEAI app...');
       
-      // Test the app functionality first
+      // Initialize document loader first
+      console.log('Loading documents from assets/documents/...');
+      const { DocumentLoader } = await import('../src/services/documentLoader');
+      const documentLoader = DocumentLoader.getInstance();
+      const loadResults = await documentLoader.initialize();
+      
+      if (loadResults.success > 0) {
+        console.log(`✅ Loaded ${loadResults.success} documents successfully`);
+      } else {
+        console.log('⚠️ No documents loaded, but continuing...');
+      }
+      
+      // Test the app functionality
       console.log('Testing app functionality...');
       const testResult = await simpleAppTest();
       if (testResult) {
@@ -141,26 +153,76 @@ export default function ChatScreen() {
     }
   };
 
-  const renderMessage = ({ item }: { item: Message }) => (
-    <View style={[styles.messageContainer, item.isUser ? styles.userMessageContainer : styles.botMessageContainer]}>
-      {!item.isUser && (
-        <Image source={require('../assets/images/icon.png')} style={styles.avatar} />
-      )}
-      <View style={[styles.message, item.isUser ? styles.userMessage : styles.botMessage(themeColors)]}>
-        <Text style={[styles.messageText, item.isUser ? styles.userMessageText : styles.botMessageText(themeColors)]}>
-          {item.text}
-        </Text>
-        <Text style={[styles.timestamp, item.isUser ? styles.userTimestamp : styles.botTimestamp]}>
-          {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </Text>
+  const renderMessage = ({ item }: { item: Message }) => {
+    const dynamicStyles = {
+      botMessage: {
+        backgroundColor: themeColors.background,
+        borderBottomLeftRadius: 5,
+        borderColor: '#E9E9E9',
+        borderWidth: 1,
+      },
+      botMessageText: {
+        color: themeColors.text,
+      }
+    };
+    
+    return (
+      <View style={[styles.messageContainer, item.isUser ? styles.userMessageContainer : styles.botMessageContainer]}>
+        {!item.isUser && (
+          <Image source={require('../assets/images/icon.png')} style={styles.avatar} />
+        )}
+        <View style={[styles.message, item.isUser ? styles.userMessage : dynamicStyles.botMessage]}>
+          <Text style={[styles.messageText, item.isUser ? styles.userMessageText : dynamicStyles.botMessageText]}>
+            {item.text}
+          </Text>
+          <Text style={[styles.timestamp, item.isUser ? styles.userTimestamp : styles.botTimestamp]}>
+            {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </Text>
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
+
+  const dynamicStyles = {
+    container: {
+      flex: 1,
+      backgroundColor: themeColors.background,
+    },
+    loadingContainer: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      padding: 10,
+    },
+    loadingText: {
+      marginLeft: 10,
+      color: themeColors.text,
+      fontSize: 14,
+    },
+    inputContainer: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      padding: 15,
+      borderTopWidth: 1,
+      borderTopColor: 'rgba(0, 0, 0, 0.1)',
+    },
+    input: {
+      flex: 1,
+      backgroundColor: themeColors.background,
+      borderRadius: 25,
+      paddingVertical: 12,
+      paddingHorizontal: 20,
+      fontSize: 16,
+      color: themeColors.text,
+      borderWidth: 1,
+      borderColor: themeColors.icon,
+    }
+  };
 
   return (
-    <SafeAreaView style={styles.container(themeColors)}>
+    <SafeAreaView style={dynamicStyles.container}>
       <KeyboardAvoidingView 
-        style={styles.container(themeColors)} 
+        style={dynamicStyles.container} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={headerHeight}
       >
@@ -191,15 +253,15 @@ export default function ChatScreen() {
         />
         
         {isLoading && (
-          <View style={styles.loadingContainer(themeColors)}>
+          <View style={dynamicStyles.loadingContainer}>
             <ActivityIndicator size="small" color={themeColors.tint} />
-            <Text style={styles.loadingText(themeColors)}>Processing...</Text>
+            <Text style={dynamicStyles.loadingText}>Processing...</Text>
           </View>
         )}
         
-        <View style={styles.inputContainer(themeColors)}>
+        <View style={dynamicStyles.inputContainer}>
           <TextInput
-            style={styles.input(themeColors)}
+            style={dynamicStyles.input}
             value={inputText}
             onChangeText={setInputText}
             placeholder="Ask a question..."
@@ -221,10 +283,6 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: (themeColors) => ({
-    flex: 1,
-    backgroundColor: themeColors.background,
-  }),
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -285,12 +343,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
     borderBottomRightRadius: 5,
   },
-  botMessage: (themeColors) => ({
-    backgroundColor: themeColors.background,
-    borderBottomLeftRadius: 5,
-    borderColor: '#E9E9E9',
-    borderWidth: 1,
-  }),
   messageText: {
     fontSize: 16,
     lineHeight: 22,
@@ -298,9 +350,6 @@ const styles = StyleSheet.create({
   userMessageText: {
     color: '#fff',
   },
-  botMessageText: (themeColors) => ({
-    color: themeColors.text,
-  }),
   timestamp: {
     fontSize: 12,
     marginTop: 8,
@@ -313,35 +362,6 @@ const styles = StyleSheet.create({
     color: '#999',
     alignSelf: 'flex-start',
   },
-  loadingContainer: (themeColors) => ({
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 10,
-  }),
-  loadingText: (themeColors) => ({
-    marginLeft: 10,
-    color: themeColors.text,
-    fontSize: 14,
-  }),
-  inputContainer: (themeColors) => ({
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0, 0, 0, 0.1)',
-  }),
-  input: (themeColors) => ({
-    flex: 1,
-    backgroundColor: themeColors.background,
-    borderRadius: 25,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    fontSize: 16,
-    color: themeColors.text,
-    borderWidth: 1,
-    borderColor: themeColors.icon,
-  }),
   sendButton: {
     marginLeft: 10,
     backgroundColor: '#007AFF',

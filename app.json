@@ -8,6 +8,10 @@
     "scheme": "leai",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "assets": [
+      "./assets/images/",
+      "./assets/documents/"
+    ],
     "ios": {
       "supportsTablet": true
     },
