@@ -3,6 +3,7 @@ import { ModelSettingsService } from './modelSettings';
 
 // llama.rn will be imported conditionally when needed
 let LlamaContext: any = null;
+let initLlama: any = null;
 let llamaRnLoaded = false;
 
 async function loadLlamaRn() {
@@ -17,12 +18,17 @@ async function loadLlamaRn() {
       console.log('LLM Service: Dynamic import successful');
       console.log('LLM Service: Module structure:', Object.keys(llamaRn));
       
-      // Use LlamaContext directly since it's exported
       if (llamaRn.LlamaContext) {
         LlamaContext = llamaRn.LlamaContext;
         console.log('LLM Service: LlamaContext loaded successfully');
       } else {
         console.warn('LLM Service: LlamaContext not found in exports');
+      }
+      if (llamaRn.initLlama) {
+        initLlama = llamaRn.initLlama;
+        console.log('LLM Service: initLlama loaded successfully');
+      } else {
+        console.warn('LLM Service: initLlama not found in exports');
       }
     } catch (dynamicError) {
       console.log('LLM Service: Dynamic import failed, trying require...');
@@ -32,32 +38,23 @@ async function loadLlamaRn() {
       console.log('LLM Service: Require import successful');
       console.log('LLM Service: Module structure:', Object.keys(llamaRn));
       
-      // Use LlamaContext directly since it's exported
       if (llamaRn.LlamaContext) {
         LlamaContext = llamaRn.LlamaContext;
         console.log('LLM Service: LlamaContext loaded successfully');
       } else {
         console.warn('LLM Service: LlamaContext not found in exports');
       }
+      if (llamaRn.initLlama) {
+        initLlama = llamaRn.initLlama;
+        console.log('LLM Service: initLlama loaded successfully');
+      } else {
+        console.warn('LLM Service: initLlama not found in exports');
+      }
     }
     
     console.log('LLM Service: llama.rn imported successfully');
     console.log('LLM Service: LlamaContext available:', !!LlamaContext);
-    
-    // Test if we can create a context
-    if (LlamaContext && typeof LlamaContext === 'function') {
-      console.log('LLM Service: LlamaContext class is available');
-      // Check if it's a class constructor
-      if (LlamaContext.prototype && LlamaContext.prototype.constructor) {
-        console.log('LLM Service: LlamaContext is a class constructor');
-      }
-    } else {
-      console.warn('LLM Service: LlamaContext class is not available');
-      console.log('LLM Service: LlamaContext type:', typeof LlamaContext);
-      if (LlamaContext) {
-        console.log('LLM Service: LlamaContext methods:', Object.getOwnPropertyNames(LlamaContext));
-      }
-    }
+    console.log('LLM Service: initLlama available:', !!initLlama);
     
     llamaRnLoaded = true;
   } catch (error) {
@@ -138,7 +135,7 @@ export class LLMService {
       // First try to load llama.rn
       await loadLlamaRn();
       
-      if (!LlamaContext) {
+      if (!initLlama) {
         throw new Error('llama.rn module not available - requires development build');
       }
 
@@ -152,8 +149,7 @@ export class LLMService {
         ? modelPath.substring(7) 
         : modelPath;
 
-      // LlamaContext is a class, need to use 'new' to instantiate
-      this.llamaContext = new LlamaContext({
+      this.llamaContext = await initLlama({
         model: formattedPath,
         n_ctx: 2048,
       });
@@ -161,6 +157,10 @@ export class LLMService {
       this.modelPath = modelPath;
       this.isModelLoaded = true;
       console.log('✅ LLM Service: REAL GGUF model loaded successfully via llama.rn.');
+      
+      // Log available methods on the context
+      console.log('LLM Service: Context methods:', Object.getOwnPropertyNames(this.llamaContext));
+      console.log('LLM Service: Context prototype methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.llamaContext)));
 
     } catch (error) {
       console.warn('⚠️ LLM Service: Failed to load REAL GGUF model. This is expected if the native module is not linked (i.e., you need to create a new development build).');
@@ -190,13 +190,24 @@ export class LLMService {
     try {
       const fullPrompt = this.constructPrompt(prompt, context);
 
-      const result = await this.llamaContext.completion({
+      // Ensure prompt is a valid string and all parameters are properly typed
+      if (!fullPrompt || typeof fullPrompt !== 'string') {
+        throw new Error('Invalid prompt: must be a non-empty string');
+      }
+
+      console.log('LLM Service: Attempting completion with prompt length:', fullPrompt.length);
+      console.log('LLM Service: Prompt preview:', fullPrompt.substring(0, 100) + '...');
+
+      const params = {
         prompt: fullPrompt,
         n_predict: this.config.maxNewTokens,
         temperature: this.config.temperature,
         top_p: this.config.topP,
-        stop: ['<end_of_turn>', 'user:'],
-      });
+      };
+
+      console.log('LLM Service: Calling completion with params:', JSON.stringify(params));
+      const result = await this.llamaContext.completion(params);
+      console.log('LLM Service: Full response from model:', JSON.stringify(result, null, 2));
 
       const generatedText = result.text.trim();
       const processingTime = Date.now() - startTime;
@@ -218,14 +229,12 @@ export class LLMService {
   }
 
   private constructPrompt(prompt: string, context?: string): string {
-    let fullPrompt = '<start_of_turn>user\n';
+    // Simplify the prompt to avoid potential issues
     if (context) {
-      fullPrompt += `Use the following context to answer the question:\n---CONTEXT---\n${context}\n---END CONTEXT---\n\nQuestion: ${prompt}`;
+      return `Context: ${context}\n\nQuestion: ${prompt}\n\nAnswer:`;
     } else {
-      fullPrompt += prompt;
+      return `${prompt}\n\nAnswer:`;
     }
-    fullPrompt += '<end_of_turn>\n<start_of_turn>model\n';
-    return fullPrompt;
   }
 
   private generateSimulatedResponse(prompt: string, context?: string): Promise<LLMResponse> {
