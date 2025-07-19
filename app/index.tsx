@@ -333,12 +333,14 @@ const styles = StyleSheet.create({
   }),
   input: (themeColors) => ({
     flex: 1,
-    backgroundColor: '#E9E9E9',
+    backgroundColor: themeColors.background,
     borderRadius: 25,
     paddingVertical: 12,
     paddingHorizontal: 20,
     fontSize: 16,
     color: themeColors.text,
+    borderWidth: 1,
+    borderColor: themeColors.icon,
   }),
   sendButton: {
     marginLeft: 10,
