@@ -324,4 +324,27 @@ export class SentenceTransformer {
   getSimilarityMethod(): string {
     return this.settings.getSimilarityMethod();
   }
+
+  // Debug method to check current model status
+  getCurrentModelStatus(): {
+    modelType: string;
+    modelPath?: string;
+    isModelLoaded: boolean;
+    modelName: string;
+    dimension: number;
+  } {
+    return {
+      modelType: this.settings.getSentenceTransformerModel(),
+      modelPath: this.settings.getSentenceTransformerPath(),
+      isModelLoaded: this.isModelLoaded,
+      modelName: this.modelName,
+      dimension: this.dimension
+    };
+  }
+
+  // Method to reinitialize with current settings
+  async reinitialize(): Promise<void> {
+    console.log('Reinitializing Sentence Transformer with current settings...');
+    await this.initialize();
+  }
 } 
