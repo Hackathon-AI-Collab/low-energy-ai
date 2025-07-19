@@ -1,10 +1,10 @@
+import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { Link } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import ModelSelectionCard from '../src/components/ModelSelectionCard';
 import { ModelSettingsService } from '../src/services/modelSettings';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { Colors } from '@/constants/Colors';
 
 export default function SettingsScreen() {
   const [settings, setSettings] = useState(ModelSettingsService.getInstance().getSettings());
@@ -21,7 +21,7 @@ export default function SettingsScreen() {
   const handleLLMModelSelect = (modelPath: string, modelType: string) => {
     console.log('Settings: Selecting LLM model:', modelPath, 'Type:', modelType);
     settingsService.setLLMModelPath(modelPath);
-    settingsService.setLLMModelType(modelType as 'onnx' | 'fallback');
+    settingsService.setLLMModelType(modelType as 'gguf' | 'fallback');
     setSettings(settingsService.getSettings());
     Alert.alert('LLM Model Selected', `Selected: ${modelPath.split('/').pop()}`);
   };
@@ -85,7 +85,7 @@ export default function SettingsScreen() {
             <View style={styles.settingInfo}>
               <Text style={styles.settingTitle(themeColors)}>Model Downloads</Text>
               <Text style={styles.settingDescription(themeColors)}>
-                Download and manage ONNX models for offline use
+                Download and manage GGUF models for offline use
               </Text>
             </View>
             <Text style={styles.arrow(themeColors)}>&gt;</Text>

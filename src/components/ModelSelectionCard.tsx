@@ -51,7 +51,7 @@ export default function ModelSelectionCard({
   };
 
   const handleModelSelect = (modelPath: string) => {
-    const modelTypeForSettings = modelType === 'llm' ? 'onnx' : 'local';
+    const modelTypeForSettings = modelType === 'llm' ? 'gguf' : 'local';
     console.log('ModelSelectionCard: Selecting model:', modelPath, 'Type:', modelTypeForSettings);
     onModelSelect(modelPath, modelTypeForSettings);
   };

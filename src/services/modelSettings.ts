@@ -148,6 +148,9 @@ export class ModelSettingsService {
     this.settings.llmModelPath = cleanPath;
     
     // Determine model type based on file extension
+    console.log('ModelSettings: Checking model type for path:', cleanPath);
+    console.log('ModelSettings: Path includes .gguf:', cleanPath.includes('.gguf'));
+    
     if (cleanPath.includes('.gguf')) {
       this.settings.llmModelType = 'gguf';
       console.log('ModelSettings: Detected GGUF model, setting type to gguf');
@@ -155,6 +158,8 @@ export class ModelSettingsService {
       this.settings.llmModelType = 'gguf'; // Default to GGUF for llama.rn (no ONNX support)
       console.log('ModelSettings: No .gguf extension detected, defaulting to gguf');
     }
+    
+    console.log('ModelSettings: Final model type set to:', this.settings.llmModelType);
     
     this.saveSettings().catch(error => {
       console.warn('Failed to save LLM model path:', error);
