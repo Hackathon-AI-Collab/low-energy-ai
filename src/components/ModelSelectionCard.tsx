@@ -35,12 +35,22 @@ export default function ModelSelectionCard({
         ? models.llm 
         : models.sentenceTransformer;
       
-      // Convert filenames to full paths
+      // Convert filenames to full paths (handle both relative and absolute paths)
       const modelDirectory = `${FileSystem.documentDirectory}models/`;
-      const modelsWithPaths = relevantModels.map(model => ({
-        name: model,
-        path: `${modelDirectory}${model}`
-      }));
+      const modelsWithPaths = relevantModels.map(model => {
+        // If model already has a full path (starts with file://), use it as is
+        if (model.startsWith('file://')) {
+          return {
+            name: model.split('/').pop() || model,
+            path: model
+          };
+        }
+        // Otherwise, construct the full path
+        return {
+          name: model,
+          path: `${modelDirectory}${model}`
+        };
+      });
       
       setAvailableModels(modelsWithPaths);
     } catch (error) {

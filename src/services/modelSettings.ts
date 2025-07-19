@@ -184,7 +184,16 @@ export class ModelSettingsService {
 
   // Sentence Transformer Methods
   setSentenceTransformerPath(path: string): void {
-    this.settings.sentenceTransformerPath = path;
+    console.log('Setting sentence transformer path:', path);
+    
+    // Fix duplicate path issue
+    let cleanPath = path;
+    if (path.includes('file:///data/user/0/com.anonymous.leaiplatform/files/models/file:///data/user/0/com.anonymous.leaiplatform/files/models/')) {
+      cleanPath = path.replace('file:///data/user/0/com.anonymous.leaiplatform/files/models/file:///data/user/0/com.anonymous.leaiplatform/files/models/', 'file:///data/user/0/com.anonymous.leaiplatform/files/models/');
+      console.log('ModelSettings: Fixed duplicate sentence transformer path:', cleanPath);
+    }
+    
+    this.settings.sentenceTransformerPath = cleanPath;
     this.settings.sentenceTransformerModel = 'local';
     this.saveSettings().catch(error => {
       console.warn('Failed to save sentence transformer path:', error);
