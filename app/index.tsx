@@ -13,6 +13,7 @@ import {
     View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { simpleAppTest } from '../src/services/simpleAppTest';
 
 interface Message {
   id: string;
@@ -38,6 +39,15 @@ export default function ChatScreen() {
   const initializeApp = async () => {
     try {
       console.log('Initializing LEAI app...');
+      
+      // Test the app functionality first
+      console.log('Testing app functionality...');
+      const testResult = await simpleAppTest();
+      if (testResult) {
+        console.log('✅ Revised architecture test passed');
+      } else {
+        console.log('⚠️ Revised architecture test failed, but continuing...');
+      }
       
       // Initialize Voy RAG with Sentence Transformer + cos_sim
       const { VoyRAG } = await import('../src/services/voyRAG');

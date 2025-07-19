@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AdvancedRAG } from '../src/services/advancedRAG';
@@ -226,12 +226,7 @@ export default function SettingsScreen() {
               >
                 <Text style={styles.radioText}>cos_sim</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.radio, settings.similarityMethod === 'manual' && styles.radioSelected]}
-                onPress={() => updateSetting('similarityMethod', 'manual')}
-              >
-                <Text style={styles.radioText}>Manual</Text>
-              </TouchableOpacity>
+
               <TouchableOpacity
                 style={[styles.radio, settings.similarityMethod === 'auto' && styles.radioSelected]}
                 onPress={() => updateSetting('similarityMethod', 'auto')}

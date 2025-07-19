@@ -1,4 +1,3 @@
-import { Voy } from 'voy-search';
 import { SentenceTransformer } from './sentenceTransformer';
 
 export interface DocumentChunk {
@@ -27,10 +26,21 @@ export interface DocumentMetadata {
   updatedAt: Date;
   chunkCount: number;
   importance: number;
+  chunks: Map<string, DocumentChunk>; // Added chunks property
+}
+
+export interface SearchResult {
+  id: string;
+  content: string;
+  metadata: {
+    documentId: string;
+    chunkId: string;
+    documentTitle: string;
+    similarity: number;
+  };
 }
 
 export class VoyVectorStore {
-  private voy: Voy | null = null;
   private sentenceTransformer: SentenceTransformer;
   private documents: Map<string, DocumentMetadata> = new Map();
   private chunks: Map<string, DocumentChunk> = new Map();
@@ -45,14 +55,9 @@ export class VoyVectorStore {
       console.log('Initializing Voy Vector Store...');
       
       // Initialize sentence transformer
-      await this.sentenceTransformer.initialize({
-        dimension: this.dimension,
-        modelName: 'Xenova/all-MiniLM-L6-v2'
-      });
+      await this.sentenceTransformer.initialize();
       
-      // Initialize Voy search index
-      this.voy = new Voy();
-      
+      console.log('Voy Vector Store initialized with local search only');
       console.log('Voy Vector Store initialized successfully');
     } catch (error) {
       console.error('Failed to initialize Voy Vector Store:', error);
@@ -62,7 +67,6 @@ export class VoyVectorStore {
 
   async addDocument(documentId: string, title: string, content: string, type: string = 'markdown'): Promise<void> {
     try {
-      if (!this.voy) throw new Error('Voy not initialized');
 
       // Generate document hash
       const hash = await this.generateHash(content);
@@ -80,7 +84,8 @@ export class VoyVectorStore {
         createdAt: new Date(),
         updatedAt: new Date(),
         chunkCount: chunks.length,
-        importance: this.calculateImportance(content)
+        importance: this.calculateImportance(content),
+        chunks: new Map() // Initialize chunks map
       };
       
       this.documents.set(documentId, document);
@@ -98,27 +103,30 @@ export class VoyVectorStore {
         };
         
         this.chunks.set(chunk.id, enhancedChunk);
+        document.chunks.set(chunk.id, enhancedChunk); // Add chunk to document's chunks map
         
         // Generate embedding for the chunk
         const embedding = await this.sentenceTransformer.generateEmbedding(chunk.content);
         enhancedChunk.embedding = embedding;
         
-        // Add to Voy index - using simplified approach
-        try {
-          await this.voy.add({
-            id: chunk.id,
-            vector: new Float32Array(embedding),
-            metadata: {
-              documentId: chunk.documentId,
-              content: chunk.content,
-              title: document.title,
-              type: document.type,
-              importance: enhancedChunk.metadata.importance
-            }
-          } as any);
-        } catch (error) {
-          console.warn('Failed to add to Voy index, continuing with local storage:', error);
-        }
+        // Add to Voy index if available
+        // if (this.voy) { // Removed voy-search dependency
+        //   try {
+        //     await this.voy.add({
+        //       id: chunk.id,
+        //       vector: new Float32Array(embedding),
+        //       metadata: {
+        //         documentId: chunk.documentId,
+        //         content: chunk.content,
+        //         title: document.title,
+        //         type: document.type,
+        //         importance: enhancedChunk.metadata.importance
+        //       }
+        //     } as any);
+        //   } catch (error) {
+        //     console.warn('Failed to add to Voy index, continuing with local storage:', error);
+        //   }
+        // }
       }
       
       console.log(`Added document: ${title} with ${chunks.length} chunks to Voy index`);
@@ -130,39 +138,53 @@ export class VoyVectorStore {
 
   async searchDocuments(query: string, limit: number = 5): Promise<DocumentChunk[]> {
     try {
-      if (!this.voy) throw new Error('Voy not initialized');
-
-      // Generate query embedding
       const queryEmbedding = await this.sentenceTransformer.generateEmbedding(query);
-      
-      // Try Voy search first, fallback to local search
-      try {
-        const results = await this.voy.search(new Float32Array(queryEmbedding), limit) as unknown as any[];
-        
-        // Convert results to DocumentChunk format
-        const chunks: DocumentChunk[] = [];
-        
-        for (const result of results) {
-          const chunk = this.chunks.get(result.id);
-          if (chunk) {
-            chunks.push({
-              ...chunk,
-              metadata: {
-                ...chunk.metadata,
-                similarityScore: result.score
-              }
-            });
-          }
+      const results: SearchResult[] = [];
+
+      // Search through all documents
+      for (const [docId, doc] of this.documents.entries()) {
+        for (const [chunkId, chunk] of doc.chunks.entries()) {
+          const similarity = await this.sentenceTransformer.calculateSimilarity(
+            queryEmbedding, 
+            chunk.embedding
+          );
+          
+          results.push({
+            id: `${docId}_${chunkId}`,
+            content: chunk.content,
+            metadata: {
+              documentId: docId,
+              chunkId: chunkId,
+              documentTitle: doc.title,
+              similarity: similarity
+            }
+          });
         }
-        
-        return chunks;
-      } catch (error) {
-        console.warn('Voy search failed, using local similarity search:', error);
-        return this.localSimilaritySearch(query, limit);
       }
+
+      // Sort by similarity and return top K results
+      results.sort((a, b) => b.metadata.similarity - a.metadata.similarity);
+      
+      // Convert to DocumentChunk format
+      const chunks: DocumentChunk[] = [];
+      for (const result of results.slice(0, limit)) {
+        const chunk = this.chunks.get(result.id);
+        if (chunk) {
+          chunks.push({
+            ...chunk,
+            metadata: {
+              ...chunk.metadata,
+              similarityScore: result.metadata.similarity
+            }
+          });
+        }
+      }
+      
+      return chunks;
+
     } catch (error) {
-      console.error('Error searching documents with Voy:', error);
-      return this.localSimilaritySearch(query, limit);
+      console.error('Error in vector search:', error);
+      return [];
     }
   }
 
@@ -170,10 +192,12 @@ export class VoyVectorStore {
     // Fallback to local similarity search
     const queryEmbedding = await this.sentenceTransformer.generateEmbedding(query);
     
-    const chunksWithScores = Array.from(this.chunks.values()).map(chunk => ({
-      ...chunk,
-      similarityScore: this.sentenceTransformer.calculateSimilarity(queryEmbedding, chunk.embedding)
-    }));
+    const chunksWithScores = await Promise.all(
+      Array.from(this.chunks.values()).map(async chunk => ({
+        ...chunk,
+        similarityScore: await this.sentenceTransformer.calculateSimilarity(queryEmbedding, chunk.embedding)
+      }))
+    );
     
     return chunksWithScores
       .sort((a, b) => (b.similarityScore || 0) - (a.similarityScore || 0))
@@ -196,7 +220,6 @@ export class VoyVectorStore {
   }
 
   async deleteDocument(documentId: string): Promise<void> {
-    if (!this.voy) throw new Error('Voy not initialized');
 
     // Remove document
     this.documents.delete(documentId);
@@ -210,14 +233,16 @@ export class VoyVectorStore {
       }
     }
     
-    // Remove from Voy index
-    for (const chunkId of chunksToRemove) {
-      try {
-        await this.voy.remove(chunkId as any);
-      } catch (error) {
-        console.warn('Failed to remove from Voy index:', error);
-      }
-    }
+    // Remove from Voy index if available
+    // if (this.voy) { // Removed voy-search dependency
+    //   for (const chunkId of chunksToRemove) {
+    //     try {
+    //       await this.voy.remove(chunkId as any);
+    //     } catch (error) {
+    //       console.warn('Failed to remove from Voy index:', error);
+    //     }
+    //   }
+    // }
     
     console.log(`Deleted document: ${documentId} and ${chunksToRemove.length} chunks`);
   }
@@ -227,11 +252,13 @@ export class VoyVectorStore {
       .reduce((sum, chunk) => sum + chunk.content.length, 0);
     
     let indexSize = 0;
-    try {
-      indexSize = this.voy ? await this.voy.size() : 0;
-    } catch (error) {
-      console.warn('Could not get Voy index size:', error);
-    }
+    // if (this.voy) { // Removed voy-search dependency
+    //   try {
+    //     indexSize = await this.voy.size();
+    //   } catch (error) {
+    //     console.warn('Could not get Voy index size:', error);
+    //   }
+    // }
     
     return {
       documents: this.documents.size,
@@ -242,14 +269,14 @@ export class VoyVectorStore {
   }
 
   async clearAll(): Promise<void> {
-    if (!this.voy) throw new Error('Voy not initialized');
-
-    // Clear Voy index
-    try {
-      await this.voy.clear();
-    } catch (error) {
-      console.warn('Failed to clear Voy index:', error);
-    }
+    // Clear Voy index if available
+    // if (this.voy) { // Removed voy-search dependency
+    //   try {
+    //     await this.voy.clear();
+    //   } catch (error) {
+    //     console.warn('Failed to clear Voy index:', error);
+    //   }
+    // }
     
     // Clear local storage
     this.documents.clear();

@@ -1,5 +1,92 @@
-import { cos_sim, env, pipeline } from '@xenova/transformers';
 import { ModelSettingsService } from './modelSettings';
+
+// Try to import ONNX Runtime, but handle the case where it's not available
+let InferenceSession: any = null;
+let Tensor: any = null;
+
+try {
+  const onnxRuntime = require('onnxruntime-react-native');
+  InferenceSession = onnxRuntime.InferenceSession;
+  Tensor = onnxRuntime.Tensor;
+} catch (error) {
+  console.warn('ONNX Runtime not available:', error);
+  // ONNX Runtime will be null, and we'll use hash-based embeddings
+}
+
+// Simple local tokenizer that doesn't require network downloads
+class LocalTokenizer {
+  private vocab: Map<string, number> = new Map();
+  private maxLength: number = 512;
+
+  constructor() {
+    // Initialize with basic vocabulary
+    this.initializeBasicVocab();
+  }
+
+  private initializeBasicVocab() {
+    // Add basic tokens
+    this.vocab.set('[PAD]', 0);
+    this.vocab.set('[UNK]', 1);
+    this.vocab.set('[CLS]', 2);
+    this.vocab.set('[SEP]', 3);
+    this.vocab.set('[MASK]', 4);
+    
+    // Add common words and characters
+    let tokenId = 5;
+    const commonWords = [
+      'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+      'medical', 'emergency', 'procedure', 'treatment', 'patient', 'doctor', 'nurse', 'hospital',
+      'search', 'rescue', 'equipment', 'guideline', 'protocol', 'tccc', 'march', 'tourniquet',
+      'airway', 'breathing', 'circulation', 'bleeding', 'shock', 'trauma', 'wound', 'injury'
+    ];
+    
+    commonWords.forEach(word => {
+      this.vocab.set(word.toLowerCase(), tokenId++);
+    });
+    
+    // Add individual characters
+    for (let i = 32; i <= 126; i++) {
+      const char = String.fromCharCode(i);
+      if (!this.vocab.has(char)) {
+        this.vocab.set(char, tokenId++);
+      }
+    }
+  }
+
+  async tokenize(text: string) {
+    const tokens = text.toLowerCase().split(/\s+/);
+    const inputIds = [this.vocab.get('[CLS]') || 2];
+    const attentionMask = [1];
+    
+    for (const token of tokens) {
+      if (inputIds.length >= this.maxLength - 1) break;
+      
+      const tokenId = this.vocab.get(token) || this.vocab.get('[UNK]') || 1;
+      inputIds.push(tokenId);
+      attentionMask.push(1);
+    }
+    
+    inputIds.push(this.vocab.get('[SEP]') || 3);
+    attentionMask.push(1);
+    
+    // Pad to max length
+    while (inputIds.length < this.maxLength) {
+      inputIds.push(this.vocab.get('[PAD]') || 0);
+      attentionMask.push(0);
+    }
+    
+    return {
+      input_ids: {
+        data: new Int32Array(inputIds),
+        dims: [1, inputIds.length]
+      },
+      attention_mask: {
+        data: new Int32Array(attentionMask),
+        dims: [1, attentionMask.length]
+      }
+    };
+  }
+}
 
 export interface EmbeddingOptions {
   modelName?: string;
@@ -11,19 +98,23 @@ export interface EmbeddingOptions {
 
 export class SentenceTransformer {
   private model: any = null;
+  private tokenizer: any = null;
   private cache: Map<string, number[]> = new Map();
   private modelName: string = 'Xenova/all-MiniLM-L6-v2';
   private dimension: number = 384;
   private isModelLoaded: boolean = false;
   private settings: ModelSettingsService;
+  private isReactNative: boolean = false;
 
   constructor() {
     this.settings = ModelSettingsService.getInstance();
+    // Detect React Native environment
+    this.isReactNative = typeof navigator === 'undefined' || navigator.product === 'ReactNative';
   }
 
   async initialize(options?: EmbeddingOptions) {
     try {
-      console.log('Initializing Sentence Transformer...');
+      console.log('Initializing Sentence Transformer with revised architecture...');
       
       // Load settings
       const settings = this.settings.getSettings();
@@ -41,11 +132,6 @@ export class SentenceTransformer {
         this.dimension = settings.sentenceTransformerDimension;
       }
       
-      // Set environment based on settings
-      env.allowLocalModels = settings.allowLocalModels;
-      env.allowRemoteModels = settings.allowRemoteModels;
-      env.useBrowserCache = settings.useBrowserCache;
-      
       // Determine model type
       const modelType = this.settings.getSentenceTransformerModel();
       
@@ -55,33 +141,37 @@ export class SentenceTransformer {
         return;
       }
       
+      // Initialize local tokenizer (no network required)
+      try {
+        this.tokenizer = new LocalTokenizer();
+        console.log('Local tokenizer initialized successfully');
+      } catch (error) {
+        console.error('Failed to initialize local tokenizer:', error);
+        this.tokenizer = null;
+      }
+      
+      // Check if we can use ONNX Runtime for model inference
       if (modelType === 'local') {
         const modelPath = this.settings.getSentenceTransformerPath();
         if (!modelPath) {
-          console.warn('Local model path not set, falling back to hash-based');
+          console.warn('Local model path not set, using hash-based embeddings');
           this.isModelLoaded = false;
-          return;
-        }
-        
-        // Load local model
-        try {
-          this.model = await pipeline('feature-extraction', modelPath as string);
-          this.isModelLoaded = true;
-          console.log(`Loaded local sentence transformer from: ${modelPath}`);
-        } catch (error) {
-          console.error('Failed to load local model:', error);
+        } else if (!InferenceSession) {
+          console.warn('ONNX Runtime not available, using hash-based embeddings');
           this.isModelLoaded = false;
+        } else {
+          try {
+            this.model = await InferenceSession.create(modelPath as string);
+            this.isModelLoaded = true;
+            console.log(`Loaded local ONNX model from: ${modelPath}`);
+          } catch (error) {
+            console.error('Failed to load local ONNX model:', error);
+            this.isModelLoaded = false;
+          }
         }
       } else {
-        // Load Xenova model
-        try {
-          this.model = await pipeline('feature-extraction', this.modelName);
-          this.isModelLoaded = true;
-          console.log(`Loaded Xenova sentence transformer: ${this.modelName}`);
-        } catch (error) {
-          console.error('Failed to load Xenova model:', error);
-          this.isModelLoaded = false;
-        }
+        console.log('Using hash-based embeddings (no local model specified)');
+        this.isModelLoaded = false;
       }
       
       console.log(`Sentence Transformer initialized with model: ${this.modelName}`);
@@ -93,80 +183,54 @@ export class SentenceTransformer {
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
-    try {
-      // Check cache first if enabled
-      if (this.settings.getUseCache() && this.cache.has(text)) {
-        return this.cache.get(text)!;
-      }
+    // If we have a model and tokenizer, try to use ONNX Runtime
+    if (this.isModelLoaded && this.model && this.tokenizer && Tensor) {
+      try {
+        // Tokenize the text using local tokenizer
+        const inputs = await this.tokenizer.tokenize(text);
 
-      let embedding: number[];
+        // Convert to ONNX format
+        const inputTensor = new Tensor('int32', inputs.input_ids.data, inputs.input_ids.dims);
+        const attentionMask = new Tensor('int32', inputs.attention_mask.data, inputs.attention_mask.dims);
 
-      if (this.isModelLoaded && this.model) {
-        // Use sentence transformer
-        embedding = await this.generateTransformerEmbedding(text);
-      } else {
-        // Fallback to hash-based embedding
-        embedding = this.generateHashEmbedding(text);
-      }
+        // Run inference
+        const results = await this.model.run({
+          input_ids: inputTensor,
+          attention_mask: attentionMask
+        });
 
-      // Cache the result if enabled
-      if (this.settings.getUseCache()) {
-        this.cache.set(text, embedding);
-        
-        // Limit cache size
-        const maxSize = this.settings.getCacheSize();
-        if (this.cache.size > maxSize) {
-          const firstKey = this.cache.keys().next().value;
-          this.cache.delete(firstKey);
-        }
+        // Extract embeddings (assuming the model outputs embeddings directly)
+        const embeddings = results.embeddings || results.last_hidden_state;
+        const embeddingArray = Array.from(embeddings.data as Float32Array);
+
+        // Normalize to unit vector
+        const magnitude = Math.sqrt(embeddingArray.reduce((sum, val) => sum + val * val, 0));
+        return embeddingArray.map(val => val / magnitude);
+
+      } catch (error) {
+        console.error('Error generating embedding with ONNX model:', error);
+        return this.generateHashEmbedding(text);
       }
-      
-      return embedding;
-    } catch (error) {
-      console.error('Error generating embedding:', error);
-      // Fallback to simple hash embedding
-      return this.generateHashEmbedding(text);
     }
-  }
 
-  private async generateTransformerEmbedding(text: string): Promise<number[]> {
-    try {
-      // Generate embedding using the transformer model
-      const result = await this.model(text, {
-        pooling: 'mean',
-        normalize: true
-      });
-      
-      // Convert to regular array
-      const embedding = Array.from(result.data) as number[];
-      
-      console.log(`Generated embedding with dimension: ${embedding.length}`);
-      return embedding;
-    } catch (error) {
-      console.error('Error in transformer embedding:', error);
-      throw error;
-    }
+    // Fallback to hash-based embedding
+    return this.generateHashEmbedding(text);
   }
 
   private generateHashEmbedding(text: string): number[] {
-    // Enhanced hash-based embedding for fallback
-    const words = text.toLowerCase().split(/\s+/);
-    const embedding: number[] = new Array(this.dimension).fill(0);
+    // Enhanced hash-based embedding
+    const hash = this.simpleHash(text);
+    const embedding = new Array(this.dimension).fill(0);
     
+    // Use hash to generate pseudo-random but deterministic embedding
     for (let i = 0; i < this.dimension; i++) {
-      let value = 0;
-      
-      for (const word of words) {
-        const wordHash = this.simpleHash(word);
-        const positionHash = this.simpleHash(`${word}_${i}`);
-        value += Math.sin(wordHash + positionHash) * Math.cos(wordHash * i);
-      }
-      
-      // Normalize to 0-1 range
-      embedding[i] = (Math.tanh(value / words.length) + 1) / 2;
+      const seed = hash + i * 31;
+      embedding[i] = Math.sin(seed) * 0.5 + 0.5; // Normalize to [0,1]
     }
     
-    return embedding;
+    // Normalize to unit vector
+    const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
+    return embedding.map(val => val / magnitude);
   }
 
   private simpleHash(str: string): number {
@@ -179,63 +243,53 @@ export class SentenceTransformer {
     return Math.abs(hash);
   }
 
-  calculateSimilarity(embedding1: number[], embedding2: number[]): number {
-    const similarityMethod = this.settings.getSimilarityMethod();
-    
-    // Auto mode: try cos_sim first, fallback to manual
-    if (similarityMethod === 'auto' || similarityMethod === 'cos_sim') {
-      try {
-        // Try to use cos_sim from transformers if available
-        if (typeof cos_sim === 'function') {
-          // Convert to tensors for cos_sim
-          const tensor1 = new Float32Array(embedding1);
-          const tensor2 = new Float32Array(embedding2);
-          
-          // Use cos_sim from transformers
-          const similarity = cos_sim(Array.from(tensor1), Array.from(tensor2));
-          const result = Array.isArray(similarity) ? similarity[0] : similarity;
-          
-          console.log(`Used cos_sim for similarity calculation: ${result}`);
-          return result;
-        }
-      } catch (error) {
-        console.warn('cos_sim failed, using manual cosine similarity:', error);
-      }
+  async calculateSimilarity(embedding1: number[], embedding2: number[]): Promise<number> {
+    if (embedding1.length !== embedding2.length) {
+      throw new Error('Embeddings must have the same dimension');
     }
-    
-    // Manual mode or cos_sim fallback
-    if (embedding1.length !== embedding2.length) return 0;
-    
+
+    // Calculate cosine similarity
     let dotProduct = 0;
     let norm1 = 0;
     let norm2 = 0;
-    
+
     for (let i = 0; i < embedding1.length; i++) {
       dotProduct += embedding1[i] * embedding2[i];
       norm1 += embedding1[i] * embedding1[i];
       norm2 += embedding2[i] * embedding2[i];
     }
-    
-    if (norm1 === 0 || norm2 === 0) return 0;
-    
-    const result = dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
-    console.log(`Used manual cosine similarity: ${result}`);
-    return result;
+
+    norm1 = Math.sqrt(norm1);
+    norm2 = Math.sqrt(norm2);
+
+    if (norm1 === 0 || norm2 === 0) {
+      return 0;
+    }
+
+    return dotProduct / (norm1 * norm2);
   }
 
-  async batchGenerateEmbeddings(texts: string[]): Promise<number[][]> {
+  async generateEmbeddings(texts: string[]): Promise<number[][]> {
     const embeddings: number[][] = [];
-    const batchSize = this.settings.getSettings().batchSize;
     
-    for (let i = 0; i < texts.length; i += batchSize) {
-      const batch = texts.slice(i, i + batchSize);
-      const batchEmbeddings = await Promise.all(
-        batch.map(text => this.generateEmbedding(text))
-      );
-      embeddings.push(...batchEmbeddings);
+    for (const text of texts) {
+      const embedding = await this.generateEmbedding(text);
+      embeddings.push(embedding);
     }
     
     return embeddings;
+  }
+
+  isReady(): boolean {
+    return this.isModelLoaded || true; // Always ready with hash fallback
+  }
+
+  getDimension(): number {
+    return this.dimension;
+  }
+
+  getModelName(): string {
+    return this.modelName;
   }
 
   getStats() {
