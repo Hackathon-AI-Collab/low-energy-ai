@@ -1,6 +1,4 @@
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { useRouter } from 'expo-router';
+import { useTheme } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -9,10 +7,11 @@ import {
     RefreshControl,
     StyleSheet,
     Text,
-    View
+    View,
 } from 'react-native';
-import { DocumentUploadService } from '../src/services/documentUploadService';
 import { SampleDocumentService } from '../src/services/sampleDocuments';
+import { SQLiteStorageService } from '../src/services/sqliteStorage';
+import { VoyVectorStore } from '../src/services/voyVectorStore';
 
 interface Document {
   id: string;
@@ -31,18 +30,16 @@ interface StorageStats {
 }
 
 export default function KnowledgeBaseScreen() {
+  const { colors: themeColors } = useTheme();
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState<StorageStats>({ 
-    documents: 0, 
-    chunks: 0, 
-    totalSize: 0, 
-    available: true 
-  });
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
-  const colorScheme = useColorScheme();
-  const themeColors = Colors[colorScheme ?? 'light'];
+  const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState<StorageStats>({
+    documents: 0,
+    chunks: 0,
+    totalSize: 0,
+    available: true
+  });
 
   useEffect(() => {
     loadDocuments();
@@ -52,28 +49,33 @@ export default function KnowledgeBaseScreen() {
     try {
       setLoading(true);
       
+      // Initialize services
+      const vectorStore = new VoyVectorStore();
+      const storageService = SQLiteStorageService.getInstance();
+      
+      await vectorStore.initialize();
+      await storageService.initialize();
+      
       // Load sample documents
       const sampleDocs = SampleDocumentService.getAllDocuments();
       
-      // Load uploaded documents
-      const uploadService = DocumentUploadService.getInstance();
-      await uploadService.initialize();
-      const uploadedDocs = await uploadService.getUploadedDocuments();
+      // Load documents from vector store
+      const storedDocs = await vectorStore.getAllDocuments();
       
-      // Combine documents
+      // Combine documents with unique keys
       const allDocs: Document[] = [
         ...sampleDocs.map(doc => ({
-          id: doc.id,
+          id: `sample-${doc.id}`, // Prefix sample documents
           title: doc.title,
           type: doc.type,
           createdAt: new Date().toISOString(),
           isSample: true
         })),
-        ...uploadedDocs.map(doc => ({
-          id: doc.id,
+        ...storedDocs.map(doc => ({
+          id: `stored-${doc.id}`, // Prefix stored documents
           title: doc.title,
           type: doc.type,
-          createdAt: doc.uploadedAt.toISOString(),
+          createdAt: doc.createdAt.toISOString(),
           isSample: false
         }))
       ];
@@ -81,8 +83,16 @@ export default function KnowledgeBaseScreen() {
       setDocuments(allDocs);
       
       // Get storage statistics
-      const storageStats = await uploadService.getStorageStats();
-      setStats(storageStats);
+      const storageStats = await storageService.getStorageStats();
+      const availability = await storageService.checkStorageAvailability();
+      
+      setStats({
+        documents: storageStats.documentsCount,
+        chunks: storageStats.chunksCount,
+        totalSize: storageStats.totalSize,
+        available: availability.available,
+        reason: availability.reason
+      });
       
     } catch (error) {
       console.error('Error loading documents:', error);
@@ -115,9 +125,9 @@ export default function KnowledgeBaseScreen() {
   };
 
   const renderDocument = ({ item }: { item: Document }) => (
-    <View style={styles.documentItem(themeColors)}>
+    <View style={[styles.documentItem, { backgroundColor: themeColors.background }]}>
       <View style={styles.documentHeader}>
-        <Text style={styles.documentTitle(themeColors)}>{item.title}</Text>
+        <Text style={[styles.documentTitle, { color: themeColors.text }]}>{item.title}</Text>
         <View style={styles.badgeContainer}>
           <View style={[styles.typeBadge, { backgroundColor: item.type === 'markdown' ? '#007AFF' : '#34C759' }]}>
             <Text style={styles.typeText}>{item.type.toUpperCase()}</Text>
@@ -129,15 +139,15 @@ export default function KnowledgeBaseScreen() {
           )}
         </View>
       </View>
-      <Text style={styles.documentDate(themeColors)}>Added: {formatDate(item.createdAt)}</Text>
-      <Text style={styles.documentId(themeColors)}>ID: {item.id}</Text>
+      <Text style={[styles.documentDate, { color: themeColors.text }]}>Added: {formatDate(item.createdAt)}</Text>
+      <Text style={[styles.documentId, { color: themeColors.text }]}>ID: {item.id}</Text>
     </View>
   );
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Text style={styles.emptyStateTitle(themeColors)}>No Documents Found</Text>
-      <Text style={styles.emptyStateSubtitle(themeColors)}>
+      <Text style={[styles.emptyStateTitle, { color: themeColors.text }]}>No Documents Found</Text>
+      <Text style={[styles.emptyStateSubtitle, { color: themeColors.text }]}>
         Documents will appear here once they are added to the knowledge base.
       </Text>
     </View>
@@ -146,9 +156,9 @@ export default function KnowledgeBaseScreen() {
   const renderStorageWarning = () => {
     if (!stats.available) {
       return (
-        <View style={styles.warningContainer(themeColors)}>
-          <Text style={styles.warningText(themeColors)}>⚠️ Storage Warning</Text>
-          <Text style={styles.warningSubtext(themeColors)}>{stats.reason}</Text>
+        <View style={styles.warningContainer}>
+          <Text style={styles.warningText}>⚠️ Storage Warning</Text>
+          <Text style={styles.warningSubtext}>{stats.reason}</Text>
         </View>
       );
     }
@@ -157,15 +167,15 @@ export default function KnowledgeBaseScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer(themeColors)}>
-        <ActivityIndicator size="large" color={themeColors.tint} />
-        <Text style={styles.loadingText(themeColors)}>Loading knowledge base...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: themeColors.background }]}>
+        <ActivityIndicator size="large" color={themeColors.primary} />
+        <Text style={[styles.loadingText, { color: themeColors.text }]}>Loading knowledge base...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container(themeColors)}>
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Knowledge Base</Text>
         <Text style={styles.headerSubtitle}>Document Management</Text>
@@ -173,18 +183,18 @@ export default function KnowledgeBaseScreen() {
 
       {renderStorageWarning()}
 
-      <View style={styles.statsContainer(themeColors)}>
+      <View style={[styles.statsContainer, { backgroundColor: themeColors.background }]}>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber(themeColors)}>{stats.documents}</Text>
-          <Text style={styles.statLabel(themeColors)}>Documents</Text>
+          <Text style={[styles.statNumber, { color: themeColors.primary }]}>{stats.documents}</Text>
+          <Text style={[styles.statLabel, { color: themeColors.text }]}>Documents</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber(themeColors)}>{stats.chunks}</Text>
-          <Text style={styles.statLabel(themeColors)}>Chunks</Text>
+          <Text style={[styles.statNumber, { color: themeColors.primary }]}>{stats.chunks}</Text>
+          <Text style={[styles.statLabel, { color: themeColors.text }]}>Chunks</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber(themeColors)}>{formatFileSize(stats.totalSize)}</Text>
-          <Text style={styles.statLabel(themeColors)}>Storage</Text>
+          <Text style={[styles.statNumber, { color: themeColors.primary }]}>{formatFileSize(stats.totalSize)}</Text>
+          <Text style={[styles.statLabel, { color: themeColors.text }]}>Storage</Text>
         </View>
       </View>
 
@@ -194,7 +204,7 @@ export default function KnowledgeBaseScreen() {
         renderItem={renderDocument}
         style={styles.documentsList}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[themeColors.tint]} tintColor={themeColors.tint} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[themeColors.primary]} tintColor={themeColors.primary} />
         }
         ListEmptyComponent={renderEmptyState}
         contentContainerStyle={documents.length === 0 ? styles.emptyListContainer : { paddingBottom: 20 }}
@@ -204,21 +214,18 @@ export default function KnowledgeBaseScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: (themeColors) => ({
+  container: {
     flex: 1,
-    backgroundColor: themeColors.background,
-  }),
-  loadingContainer: (themeColors) => ({
+  },
+  loadingContainer: {
     flex: 1,
-    backgroundColor: themeColors.background,
     justifyContent: 'center',
     alignItems: 'center',
-  }),
-  loadingText: (themeColors) => ({
+  },
+  loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: themeColors.text,
-  }),
+  },
   header: {
     backgroundColor: '#007AFF',
     padding: 20,
@@ -237,27 +244,26 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 2,
   },
-  warningContainer: (themeColors) => ({
+  warningContainer: {
     backgroundColor: '#FFE5E5',
     margin: 15,
     padding: 15,
     borderRadius: 10,
     borderLeftWidth: 4,
     borderLeftColor: '#FF3B30',
-  }),
-  warningText: (themeColors) => ({
+  },
+  warningText: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#FF3B30',
-  }),
-  warningSubtext: (themeColors) => ({
+  },
+  warningSubtext: {
     fontSize: 14,
     color: '#FF3B30',
     marginTop: 5,
-  }),
-  statsContainer: (themeColors) => ({
+  },
+  statsContainer: {
     flexDirection: 'row',
-    backgroundColor: themeColors.background,
     margin: 15,
     borderRadius: 15,
     padding: 20,
@@ -266,96 +272,88 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 5,
     elevation: 3,
-  }),
+  },
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
-  statNumber: (themeColors) => ({
+  statNumber: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: themeColors.tint,
-  }),
-  statLabel: (themeColors) => ({
+  },
+  statLabel: {
     fontSize: 13,
-    color: themeColors.text,
     opacity: 0.7,
     marginTop: 4,
-  }),
+  },
   documentsList: {
     flex: 1,
     paddingHorizontal: 15,
   },
-  documentItem: (themeColors) => ({
-    backgroundColor: themeColors.background,
+  documentItem: {
     marginBottom: 12,
     borderRadius: 15,
     padding: 20,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.05)',
-  }),
+  },
   documentHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  documentTitle: (themeColors) => ({
+  documentTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: themeColors.text,
     flex: 1,
     marginRight: 10,
-  }),
+  },
   badgeContainer: {
     flexDirection: 'row',
-    gap: 5,
+    gap: 8,
   },
   typeBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 6,
   },
   sampleBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 6,
   },
   typeText: {
     fontSize: 10,
     fontWeight: 'bold',
     color: '#fff',
   },
-  documentDate: (themeColors) => ({
+  documentDate: {
     fontSize: 14,
-    color: themeColors.text,
-    opacity: 0.7,
     marginTop: 8,
-  }),
-  documentId: (themeColors) => ({
+    opacity: 0.7,
+  },
+  documentId: {
     fontSize: 12,
-    color: themeColors.text,
-    opacity: 0.5,
     marginTop: 4,
-  }),
+    opacity: 0.5,
+    fontFamily: 'monospace',
+  },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 50,
+    padding: 40,
   },
-  emptyStateTitle: (themeColors) => ({
-    fontSize: 18,
+  emptyStateTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
-    color: themeColors.text,
-    marginBottom: 8,
-  }),
-  emptyStateSubtitle: (themeColors) => ({
-    fontSize: 14,
-    color: themeColors.text,
-    opacity: 0.7,
+    marginBottom: 10,
+  },
+  emptyStateSubtitle: {
+    fontSize: 16,
     textAlign: 'center',
-    paddingHorizontal: 20,
-  }),
+    opacity: 0.7,
+  },
   emptyListContainer: {
     flex: 1,
     justifyContent: 'center',
