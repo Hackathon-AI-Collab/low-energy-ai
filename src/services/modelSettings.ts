@@ -1,3 +1,6 @@
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 export interface ModelSettings {
   // LLM Model Settings
   llmModelPath?: string;
@@ -24,14 +27,19 @@ export interface ModelSettings {
   useBrowserCache: boolean;
 }
 
+type SettingsChangeCallback = (settings: ModelSettings) => void;
+
 export class ModelSettingsService {
   private static instance: ModelSettingsService;
   private settings: ModelSettings;
   private storageKey = 'leai_model_settings';
+  private callbacks: SettingsChangeCallback[] = [];
 
   private constructor() {
     this.settings = this.getDefaultSettings();
-    this.loadSettings();
+    this.loadSettings().catch(error => {
+      console.warn('Failed to load settings in constructor:', error);
+    });
   }
 
   static getInstance(): ModelSettingsService {
@@ -41,11 +49,36 @@ export class ModelSettingsService {
     return ModelSettingsService.instance;
   }
 
+  // Add callback for settings changes
+  addSettingsChangeCallback(callback: SettingsChangeCallback): void {
+    this.callbacks.push(callback);
+  }
+
+  // Remove callback
+  removeSettingsChangeCallback(callback: SettingsChangeCallback): void {
+    const index = this.callbacks.indexOf(callback);
+    if (index > -1) {
+      this.callbacks.splice(index, 1);
+    }
+  }
+
+  // Notify all callbacks of settings change
+  private notifySettingsChanged(): void {
+    this.callbacks.forEach(callback => {
+      try {
+        callback(this.settings);
+      } catch (error) {
+        console.warn('Error in settings change callback:', error);
+      }
+    });
+  }
+
   private getDefaultSettings(): ModelSettings {
     return {
-      // LLM defaults
+      // LLM defaults - Use fallback mode since no real LLM ONNX models are available
       llmModelType: 'fallback',
-      llmModelName: 'gemma-3n-E2B-it',
+      llmModelName: 'simulated-llm',
+      llmModelPath: undefined, // Don't set a path to avoid loading non-existent files
       
       // Sentence Transformer defaults - Use Xenova by default
       sentenceTransformerModel: 'xenova',
@@ -67,25 +100,24 @@ export class ModelSettingsService {
     };
   }
 
-  private loadSettings(): void {
+  private async loadSettings(): Promise<void> {
     try {
-      if (typeof localStorage !== 'undefined') {
-        const saved = localStorage.getItem(this.storageKey);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          this.settings = { ...this.getDefaultSettings(), ...parsed };
-        }
+      const saved = await AsyncStorage.getItem(this.storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        this.settings = { ...this.getDefaultSettings(), ...parsed };
+        console.log('Loaded model settings:', this.settings);
       }
     } catch (error) {
       console.warn('Failed to load model settings:', error);
     }
   }
 
-  private saveSettings(): void {
+  private async saveSettings(): Promise<void> {
     try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(this.storageKey, JSON.stringify(this.settings));
-      }
+      await AsyncStorage.setItem(this.storageKey, JSON.stringify(this.settings));
+      console.log('Saved model settings:', this.settings);
+      this.notifySettingsChanged();
     } catch (error) {
       console.warn('Failed to save model settings:', error);
     }
@@ -97,14 +129,19 @@ export class ModelSettingsService {
 
   updateSettings(newSettings: Partial<ModelSettings>): void {
     this.settings = { ...this.settings, ...newSettings };
-    this.saveSettings();
+    this.saveSettings().catch(error => {
+      console.warn('Failed to save settings:', error);
+    });
   }
 
   // LLM Model Methods
   setLLMModelPath(path: string): void {
+    console.log('Setting LLM model path:', path);
     this.settings.llmModelPath = path;
     this.settings.llmModelType = 'onnx';
-    this.saveSettings();
+    this.saveSettings().catch(error => {
+      console.warn('Failed to save LLM model path:', error);
+    });
   }
 
   getLLMModelPath(): string | undefined {
@@ -112,8 +149,11 @@ export class ModelSettingsService {
   }
 
   setLLMModelType(type: 'onnx' | 'fallback'): void {
+    console.log('Setting LLM model type:', type);
     this.settings.llmModelType = type;
-    this.saveSettings();
+    this.saveSettings().catch(error => {
+      console.warn('Failed to save LLM model type:', error);
+    });
   }
 
   getLLMModelType(): 'onnx' | 'fallback' {
@@ -124,7 +164,9 @@ export class ModelSettingsService {
   setSentenceTransformerPath(path: string): void {
     this.settings.sentenceTransformerPath = path;
     this.settings.sentenceTransformerModel = 'local';
-    this.saveSettings();
+    this.saveSettings().catch(error => {
+      console.warn('Failed to save sentence transformer path:', error);
+    });
   }
 
   getSentenceTransformerPath(): string | undefined {
@@ -133,7 +175,9 @@ export class ModelSettingsService {
 
   setSentenceTransformerModel(model: 'xenova' | 'local' | 'hash'): void {
     this.settings.sentenceTransformerModel = model;
-    this.saveSettings();
+    this.saveSettings().catch(error => {
+      console.warn('Failed to save sentence transformer model:', error);
+    });
   }
 
   getSentenceTransformerModel(): 'xenova' | 'local' | 'hash' {
@@ -142,7 +186,9 @@ export class ModelSettingsService {
 
   setSentenceTransformerName(name: string): void {
     this.settings.sentenceTransformerName = name;
-    this.saveSettings();
+    this.saveSettings().catch(error => {
+      console.warn('Failed to save sentence transformer name:', error);
+    });
   }
 
   getSentenceTransformerName(): string {
@@ -152,7 +198,9 @@ export class ModelSettingsService {
   // Similarity Method
   setSimilarityMethod(method: 'cos_sim' | 'auto'): void {
     this.settings.similarityMethod = method;
-    this.saveSettings();
+    this.saveSettings().catch(error => {
+      console.warn('Failed to save similarity method:', error);
+    });
   }
 
   getSimilarityMethod(): 'cos_sim' | 'auto' {
@@ -162,7 +210,9 @@ export class ModelSettingsService {
   // Performance Settings
   setUseCache(useCache: boolean): void {
     this.settings.useCache = useCache;
-    this.saveSettings();
+    this.saveSettings().catch(error => {
+      console.warn('Failed to save use cache setting:', error);
+    });
   }
 
   getUseCache(): boolean {
@@ -171,7 +221,9 @@ export class ModelSettingsService {
 
   setCacheSize(size: number): void {
     this.settings.cacheSize = size;
-    this.saveSettings();
+    this.saveSettings().catch(error => {
+      console.warn('Failed to save cache size:', error);
+    });
   }
 
   getCacheSize(): number {
@@ -181,7 +233,9 @@ export class ModelSettingsService {
   // Advanced Settings
   setAllowRemoteModels(allow: boolean): void {
     this.settings.allowRemoteModels = allow;
-    this.saveSettings();
+    this.saveSettings().catch(error => {
+      console.warn('Failed to save allow remote models setting:', error);
+    });
   }
 
   getAllowRemoteModels(): boolean {
@@ -190,11 +244,34 @@ export class ModelSettingsService {
 
   setAllowLocalModels(allow: boolean): void {
     this.settings.allowLocalModels = allow;
-    this.saveSettings();
+    this.saveSettings().catch(error => {
+      console.warn('Failed to save allow local models setting:', error);
+    });
   }
 
   getAllowLocalModels(): boolean {
     return this.settings.allowLocalModels;
+  }
+
+  // Method to get available downloaded models
+  async getAvailableModels(): Promise<{ llm: string[], sentenceTransformer: string[] }> {
+    try {
+      const modelDownloadService = (await import('./modelDownloadService')).ModelDownloadService.getInstance();
+      const downloadedModels = await modelDownloadService.getDownloadedModels();
+      
+      const llmModels = downloadedModels.filter(model => 
+        model.includes('phi') || model.includes('llama') || model.includes('llm')
+      );
+      
+      const sentenceTransformerModels = downloadedModels.filter(model => 
+        model.includes('all-MiniLM') || model.includes('sentence')
+      );
+      
+      return { llm: llmModels, sentenceTransformer: sentenceTransformerModels };
+    } catch (error) {
+      console.warn('Failed to get available models:', error);
+      return { llm: [], sentenceTransformer: [] };
+    }
   }
 
   // Utility Methods
@@ -203,7 +280,7 @@ export class ModelSettingsService {
   }
 
   isSentenceTransformerReady(): boolean {
-    return this.settings.sentenceTransformerModel !== 'hash';
+    return this.settings.sentenceTransformerModel === 'local' && !!this.settings.sentenceTransformerPath;
   }
 
   getModelInfo(): {
@@ -228,7 +305,9 @@ export class ModelSettingsService {
 
   resetToDefaults(): void {
     this.settings = this.getDefaultSettings();
-    this.saveSettings();
+    this.saveSettings().catch(error => {
+      console.warn('Failed to reset settings:', error);
+    });
   }
 
   exportSettings(): string {
@@ -239,7 +318,9 @@ export class ModelSettingsService {
     try {
       const parsed = JSON.parse(settingsJson);
       this.settings = { ...this.getDefaultSettings(), ...parsed };
-      this.saveSettings();
+      this.saveSettings().catch(error => {
+        console.warn('Failed to import settings:', error);
+      });
       return true;
     } catch (error) {
       console.error('Failed to import settings:', error);

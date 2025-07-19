@@ -143,10 +143,16 @@ export class ModelDownloadService {
         this.settings.setSentenceTransformerPath(filePath);
         this.settings.setSentenceTransformerModel('local');
         console.log(`Updated sentence transformer settings: ${filePath}`);
-      } else if (modelName.includes('llm') || modelName.includes('phi') || modelName.includes('llama')) {
+      } else if (modelName.includes('gemma') || modelName.includes('Gemma-3-1b-it')) {
+        // Gemma model is a real ONNX model, so we can set the path
         this.settings.setLLMModelPath(filePath);
         this.settings.setLLMModelType('onnx');
-        console.log(`Updated LLM settings: ${filePath}`);
+        console.log(`Updated LLM settings for Gemma model: ${filePath}`);
+      } else if (modelName.includes('llm')) {
+        // Only set LLM model path if the model actually exists and is valid
+        // For now, we'll use simulated ONNX mode since real LLM models aren't available
+        console.log(`LLM model downloaded but using simulated ONNX mode: ${filePath}`);
+        // Don't set the LLM model path to avoid loading non-existent files
       }
     } catch (error) {
       console.error('Failed to update model settings:', error);
@@ -162,6 +168,11 @@ export class ModelDownloadService {
     if (modelName.includes('sentence-transformer') || modelName.includes('all-MiniLM')) {
       this.reinitializeVoyRAG();
     }
+    
+    // If this is an LLM model, we should reinitialize the Voy RAG (which includes LLM service)
+    if (modelName.includes('llm') || modelName.includes('gemma') || modelName.includes('Gemma-3-1b-it')) {
+      this.reinitializeVoyRAG();
+    }
   }
 
   private async reinitializeVoyRAG(): Promise<void> {
@@ -169,35 +180,30 @@ export class ModelDownloadService {
       // Import and reinitialize Voy RAG
       const { VoyRAG } = await import('./voyRAG');
       const voyRAG = new VoyRAG();
-      await voyRAG.reinitializeSentenceTransformer();
-      console.log('Voy RAG sentence transformer reinitialized after model download');
+      await voyRAG.reinitializeAfterModelDownload();
+      console.log('Voy RAG reinitialized after model download');
     } catch (error) {
       console.error('Failed to reinitialize Voy RAG:', error);
     }
   }
+
+
 
   async getAvailableModels(): Promise<Array<{ name: string; type: string; url: string; fileName: string; size?: number }>> {
     return [
       {
         name: 'Xenova/all-MiniLM-L6-v2 (Sentence Transformer)',
         type: 'sentence-transformer',
-        url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/model.onnx',
+        url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx',
         fileName: 'all-MiniLM-L6-v2.onnx',
         size: 90 * 1024 * 1024 // ~90MB
       },
       {
-        name: 'Phi-3-mini (LLM)',
+        name: 'Gemma-3-1b-it (LLM) - ONNX',
         type: 'llm',
-        url: 'https://huggingface.co/microsoft/Phi-3-mini-4k-instruct/resolve/main/model.onnx',
-        fileName: 'phi-3-mini.onnx',
-        size: 1500 * 1024 * 1024 // ~1.5GB
-      },
-      {
-        name: 'Llama-3.1-8B (LLM)',
-        type: 'llm',
-        url: 'https://huggingface.co/meta-llama/Meta-Llama-3.1-8B/resolve/main/model.onnx',
-        fileName: 'llama-3.1-8b.onnx',
-        size: 8000 * 1024 * 1024 // ~8GB
+        url: 'https://huggingface.co/onnx-community/gemma-3-1b-it-ONNX/resolve/main/onnx/model_q4f16.onnx',
+        fileName: 'gemma-3-1b-it.onnx',
+        size: 998 * 1024 * 1024 // ~998MB
       }
     ];
   }

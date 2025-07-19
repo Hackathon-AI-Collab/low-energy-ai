@@ -1,4 +1,5 @@
-import { EnhancedLLM } from './enhancedLLM';
+import { LLMService } from './llmService';
+import { ModelSettingsService } from './modelSettings';
 import { SampleDocumentService } from './sampleDocuments';
 import { DocumentChunk, VoyVectorStore } from './voyVectorStore';
 
@@ -16,13 +17,37 @@ export interface VoyRAGResponse {
 }
 
 export class VoyRAG {
-  private enhancedLLM: EnhancedLLM;
+  private llmService: LLMService;
   private voyVectorStore: VoyVectorStore;
   private documents: any[] = [];
+  private settings: ModelSettingsService;
+  private settingsCallback: (settings: any) => void;
 
   constructor() {
-    this.enhancedLLM = new EnhancedLLM();
+    this.llmService = new LLMService();
     this.voyVectorStore = new VoyVectorStore();
+    this.settings = ModelSettingsService.getInstance();
+    
+    // Set up settings change listener
+    this.settingsCallback = this.handleSettingsChange.bind(this);
+    this.settings.addSettingsChangeCallback(this.settingsCallback);
+  }
+
+  private handleSettingsChange(settings: any): void {
+    console.log('Voy RAG: Settings changed, checking for LLM updates...');
+    
+    const newLLMModelPath = settings.llmModelPath;
+    const newLLMModelType = settings.llmModelType;
+    
+    console.log('Voy RAG: New LLM model path:', newLLMModelPath, 'Type:', newLLMModelType);
+    
+    // If LLM settings changed, reinitialize LLM service
+    if (newLLMModelPath || newLLMModelType === 'onnx') {
+      console.log('Voy RAG: LLM settings changed, reinitializing LLM service...');
+      this.reinitializeLLMService().catch(error => {
+        console.error('Voy RAG: Failed to reinitialize LLM service after settings change:', error);
+      });
+    }
   }
 
   async initialize(modelPath?: string) {
@@ -31,7 +56,7 @@ export class VoyRAG {
       
       // Initialize both systems
       await Promise.all([
-        this.enhancedLLM.initialize(modelPath),
+        this.llmService.initialize(),
         this.voyVectorStore.initialize()
       ]);
       
@@ -84,10 +109,16 @@ export class VoyRAG {
       // Determine search engine used
       const searchEngine = this.determineSearchEngine(relevantChunks);
       
-      // Try enhanced LLM first
-      if (this.enhancedLLM.isModelReady()) {
+      // Debug: Check LLM service status
+      console.log('Voy RAG: Checking LLM service status...');
+      console.log('Voy RAG: LLM service ready:', this.llmService.isModelReady());
+      console.log('Voy RAG: LLM service info:', this.llmService.getModelInfo());
+      
+      // Try LLM service first
+      if (this.llmService.isModelReady()) {
         try {
-          const llmResponse = await this.enhancedLLM.generateResponse(query, context);
+          console.log('Voy RAG: Using LLM service for response generation');
+          const llmResponse = await this.llmService.generateResponse(query, context);
           
           return {
             text: llmResponse.text,
@@ -104,6 +135,8 @@ export class VoyRAG {
         } catch (error) {
           console.warn('Enhanced LLM failed, falling back to Voy search:', error);
         }
+      } else {
+        console.log('Voy RAG: LLM service not ready, using fallback response generation');
       }
       
       // Fallback to Voy-based response generation
@@ -272,7 +305,7 @@ For more specific guidance, please ask about medical procedures, search and resc
       chunks: vectorStoreStats.chunks,
       totalSize: vectorStoreStats.totalSize,
       indexSize: vectorStoreStats.indexSize,
-      enhancedLLMReady: this.enhancedLLM.isModelReady(),
+      llmServiceReady: this.llmService.isModelReady(),
       voyVectorStoreReady: true,
       embeddingModel: sentenceTransformerStats.modelName,
       embeddingModelLoaded: sentenceTransformerStats.modelLoaded
@@ -281,7 +314,7 @@ For more specific guidance, please ask about medical procedures, search and resc
 
   async getModelInfo() {
     return {
-      enhancedLLM: this.enhancedLLM.getModelInfo(),
+      llmService: this.llmService.getModelInfo(),
       voyVectorStore: {
         isLoaded: true,
         modelType: 'Voy Search + Sentence Transformer',
@@ -314,4 +347,42 @@ For more specific guidance, please ask about medical procedures, search and resc
       console.error('Failed to reinitialize sentence transformer:', error);
     }
   }
+
+  // Method to reinitialize both sentence transformer and LLM service after model download
+  async reinitializeAfterModelDownload(): Promise<void> {
+    try {
+      console.log('Reinitializing Voy RAG after model download...');
+      
+      // Reinitialize sentence transformer
+      await this.voyVectorStore.reinitializeSentenceTransformer();
+      console.log('Sentence transformer reinitialized successfully');
+      
+      // Reinitialize LLM service
+      await this.llmService.reinitialize();
+      console.log('LLM service reinitialized successfully');
+      
+      console.log('Voy RAG reinitialization completed');
+    } catch (error) {
+      console.error('Failed to reinitialize Voy RAG:', error);
+    }
+  }
+
+  // Method to reinitialize LLM service specifically
+  async reinitializeLLMService(): Promise<void> {
+    try {
+      console.log('Reinitializing LLM service in Voy RAG...');
+      await this.llmService.reinitialize();
+      console.log('LLM service reinitialized successfully');
+    } catch (error) {
+      console.error('Failed to reinitialize LLM service:', error);
+    }
+  }
+
+  // Cleanup method to remove settings callback
+  destroy(): void {
+    this.settings.removeSettingsChangeCallback(this.settingsCallback);
+    this.llmService.destroy();
+  }
+
+
 } 
