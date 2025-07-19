@@ -101,6 +101,13 @@ export class ModelDownloadService {
         size: 90 * 1024 * 1024,
       },
       {
+        name: 'Phi-3-mini-4k-instruct (GGUF Q4)',
+        type: 'llm',
+        url: 'https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf',
+        fileName: 'Phi-3-mini-4k-instruct-q4.gguf',
+        size: 2.2 * 1024 * 1024 * 1024,
+      },
+      {
         name: 'Gemma 3B-IT (GGUF Q2_K)',
         type: 'llm',
         url: 'https://huggingface.co/mradermacher/gemma-3n-E2B-GGUF/resolve/main/gemma-3n-E2B.Q2_K.gguf',
