@@ -138,12 +138,9 @@ export class ModelSettingsService {
   setLLMModelPath(path: string): void {
     console.log('Setting LLM model path:', path);
     
-    // Fix duplicate path issue
-    let cleanPath = path;
-    if (path.includes('file:///data/user/0/com.anonymous.leaiplatform/files/models/file:///data/user/0/com.anonymous.leaiplatform/files/models/')) {
-      cleanPath = path.replace('file:///data/user/0/com.anonymous.leaiplatform/files/models/file:///data/user/0/com.anonymous.leaiplatform/files/models/', 'file:///data/user/0/com.anonymous.leaiplatform/files/models/');
-      console.log('ModelSettings: Fixed duplicate path:', cleanPath);
-    }
+    // Comprehensive path cleaning
+    let cleanPath = this.cleanModelPath(path);
+    console.log('ModelSettings: Cleaned LLM model path:', cleanPath);
     
     this.settings.llmModelPath = cleanPath;
     
@@ -167,7 +164,11 @@ export class ModelSettingsService {
   }
 
   getLLMModelPath(): string | undefined {
-    return this.settings.llmModelPath;
+    if (!this.settings.llmModelPath) {
+      return undefined;
+    }
+    // Ensure the returned path is clean
+    return this.cleanModelPath(this.settings.llmModelPath);
   }
 
   setLLMModelType(type: 'gguf' | 'fallback'): void {
@@ -186,12 +187,9 @@ export class ModelSettingsService {
   setSentenceTransformerPath(path: string): void {
     console.log('Setting sentence transformer path:', path);
     
-    // Fix duplicate path issue
-    let cleanPath = path;
-    if (path.includes('file:///data/user/0/com.anonymous.leaiplatform/files/models/file:///data/user/0/com.anonymous.leaiplatform/files/models/')) {
-      cleanPath = path.replace('file:///data/user/0/com.anonymous.leaiplatform/files/models/file:///data/user/0/com.anonymous.leaiplatform/files/models/', 'file:///data/user/0/com.anonymous.leaiplatform/files/models/');
-      console.log('ModelSettings: Fixed duplicate sentence transformer path:', cleanPath);
-    }
+    // Comprehensive path cleaning
+    let cleanPath = this.cleanModelPath(path);
+    console.log('ModelSettings: Cleaned sentence transformer path:', cleanPath);
     
     this.settings.sentenceTransformerPath = cleanPath;
     this.settings.sentenceTransformerModel = 'local';
@@ -200,8 +198,60 @@ export class ModelSettingsService {
     });
   }
 
+  // Utility method to clean model paths
+  private cleanModelPath(path: string): string {
+    if (!path) return path;
+    
+    console.log('ModelSettings: Cleaning path:', path);
+    
+    // Remove duplicate file:// prefixes
+    if (path.includes('file:///data/user/0/com.anonymous.leaiplatform/files/models/file:///data/user/0/com.anonymous.leaiplatform/files/models/')) {
+      const cleaned = path.replace('file:///data/user/0/com.anonymous.leaiplatform/files/models/file:///data/user/0/com.anonymous.leaiplatform/files/models/', 'file:///data/user/0/com.anonymous.leaiplatform/files/models/');
+      console.log('ModelSettings: Fixed duplicate file:// prefix:', cleaned);
+      return cleaned;
+    }
+    
+    // Remove duplicate /data/user/0/com.anonymous.leaiplatform/files/models/ prefixes
+    if (path.includes('/data/user/0/com.anonymous.leaiplatform/files/models/file:///data/user/0/com.anonymous.leaiplatform/files/models/')) {
+      const cleaned = path.replace('/data/user/0/com.anonymous.leaiplatform/files/models/file:///data/user/0/com.anonymous.leaiplatform/files/models/', 'file:///data/user/0/com.anonymous.leaiplatform/files/models/');
+      console.log('ModelSettings: Fixed duplicate /data prefix:', cleaned);
+      return cleaned;
+    }
+    
+    // Ensure proper file:// prefix
+    if (path.startsWith('/data/') && !path.startsWith('file://')) {
+      const cleaned = `file://${path}`;
+      console.log('ModelSettings: Added file:// prefix:', cleaned);
+      return cleaned;
+    }
+    
+    return path;
+  }
+
+  // Method to force update model type based on current path
+  forceUpdateModelType(): void {
+    const currentPath = this.settings.llmModelPath;
+    if (currentPath) {
+      console.log('ModelSettings: Force updating model type for path:', currentPath);
+      const cleanPath = this.cleanModelPath(currentPath);
+      
+      if (cleanPath.includes('.gguf') && this.settings.llmModelType !== 'gguf') {
+        console.log('ModelSettings: Force setting model type to gguf for GGUF file');
+        this.settings.llmModelType = 'gguf';
+        // Save without triggering callbacks to avoid loops
+        AsyncStorage.setItem(this.storageKey, JSON.stringify(this.settings)).catch(error => {
+          console.warn('Failed to save forced model type update:', error);
+        });
+      }
+    }
+  }
+
   getSentenceTransformerPath(): string | undefined {
-    return this.settings.sentenceTransformerPath;
+    if (!this.settings.sentenceTransformerPath) {
+      return undefined;
+    }
+    // Ensure the returned path is clean
+    return this.cleanModelPath(this.settings.sentenceTransformerPath);
   }
 
   setSentenceTransformerModel(model: 'xenova' | 'local' | 'hash'): void {

@@ -115,13 +115,24 @@ export class LLMService {
   async initialize(): Promise<void> {
     try {
       console.log('Initializing LLM Service with llama.rn...');
+      
+      // Force update model type if needed
+      this.settings.forceUpdateModelType();
+      
       const modelPath = this.settings.getLLMModelPath();
       const modelType = this.settings.getLLMModelType();
 
+      console.log('LLM Service: Retrieved model path:', modelPath);
+      console.log('LLM Service: Retrieved model type:', modelType);
+      console.log('LLM Service: Model path exists:', !!modelPath);
+      console.log('LLM Service: Model type is gguf:', modelType === 'gguf');
+
       if (modelType === 'gguf' && modelPath) {
+        console.log('LLM Service: Attempting to load GGUF model...');
         await this.loadLlamaModel(modelPath);
       } else {
         console.log('No GGUF model configured, using simulated mode.');
+        console.log('LLM Service: Reason - modelType !== gguf or modelPath is empty');
         this.isModelLoaded = false;
       }
     } catch (error) {
