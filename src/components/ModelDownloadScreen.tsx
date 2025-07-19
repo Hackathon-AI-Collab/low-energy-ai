@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -8,136 +8,120 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { DownloadProgress, ModelDownloadService } from '../services/modelDownloadService';
+import { ModelDownloadService } from '../services/modelDownloadService';
 import { ModelSettingsService } from '../services/modelSettings';
 
 interface ModelInfo {
   name: string;
-  type: string;
+  type: 'llm' | 'sentence-transformer';
   url: string;
   fileName: string;
   size?: number;
 }
 
+interface ProgressState {
+  progress: number;
+  totalBytes: number;
+  writtenBytes: number;
+}
+
 export const ModelDownloadScreen: React.FC = () => {
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [downloadedModels, setDownloadedModels] = useState<string[]>([]);
-  const [downloads, setDownloads] = useState<DownloadProgress[]>([]);
+  const [downloadedFiles, setDownloadedFiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [downloading, setDownloading] = useState<string | null>(null);
+  const [progressMap, setProgressMap] = useState<Record<string, ProgressState>>({});
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
   
   const downloadService = ModelDownloadService.getInstance();
   const settingsService = ModelSettingsService.getInstance();
 
-  useEffect(() => {
-    initializeScreen();
-    const interval = setInterval(updateDownloads, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const initializeScreen = async () => {
+  const initializeScreen = useCallback(async () => {
     try {
+      setLoading(true);
       await downloadService.initialize();
       const models = await downloadService.getAvailableModels();
       const downloaded = await downloadService.getDownloadedModels();
       
       setAvailableModels(models);
-      setDownloadedModels(downloaded);
+      setDownloadedFiles(downloaded.map(file => file.split('/').pop() || ''));
     } catch (error) {
       console.error('Failed to initialize model download screen:', error);
       Alert.alert('Error', 'Failed to load available models');
     } finally {
       setLoading(false);
     }
-  };
+  }, [downloadService]);
 
-  const updateDownloads = async () => {
-    try {
-      const currentDownloads = await downloadService.getAllDownloads();
-      setDownloads(currentDownloads);
-    } catch (error) {
-      console.error('Failed to update downloads:', error);
-    }
-  };
+  useEffect(() => {
+    initializeScreen();
+  }, [initializeScreen]);
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
+  const formatFileSize = (bytes?: number): string => {
+    if (!bytes || bytes === 0) return '0 B';
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   const handleDownload = async (model: ModelInfo) => {
-    if (downloading) {
+    if (isDownloading) {
       Alert.alert('Download in Progress', 'Please wait for the current download to complete.');
       return;
     }
 
-    setDownloading(model.name);
-    
+    setIsDownloading(true);
+    setProgressMap(prev => ({ ...prev, [model.name]: { progress: 0, totalBytes: 0, writtenBytes: 0 } }));
+
     try {
       await downloadService.downloadModel({
         modelName: model.name,
-        modelType: model.type as any,
+        modelType: model.type,
         url: model.url,
         fileName: model.fileName,
-        expectedSize: model.size,
-        onProgress: (progress) => {
-          console.log(`Download progress for ${model.name}: ${(progress * 100).toFixed(1)}%`);
+        onProgress: (p) => {
+          setProgressMap(prev => ({ 
+            ...prev, 
+            [model.name]: {
+              progress: p.totalBytesWritten / p.totalBytesExpectedToWrite,
+              writtenBytes: p.totalBytesWritten,
+              totalBytes: p.totalBytesExpectedToWrite,
+            }
+          }));
         },
         onComplete: (filePath) => {
-          console.log(`Download completed: ${filePath}`);
           Alert.alert('Success', `${model.name} downloaded successfully!`);
-          initializeScreen(); // Refresh the list
+          initializeScreen();
         },
         onError: (error) => {
-          console.error(`Download failed for ${model.name}:`, error);
           Alert.alert('Download Failed', `Failed to download ${model.name}: ${error.message}`);
         }
       });
     } catch (error) {
       console.error('Download error:', error);
-      Alert.alert('Error', 'Download failed');
     } finally {
-      setDownloading(null);
+      setIsDownloading(false);
     }
   };
 
   const handleDeleteModel = async (fileName: string) => {
-    Alert.alert(
-      'Delete Model',
-      `Are you sure you want to delete ${fileName}?`,
+    Alert.alert('Delete Model', `Are you sure you want to delete ${fileName}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
-          style: 'destructive',
+          text: 'Delete', style: 'destructive',
           onPress: async () => {
             try {
               await downloadService.deleteModel(fileName);
               Alert.alert('Success', 'Model deleted successfully');
-              initializeScreen(); // Refresh the list
+              initializeScreen();
             } catch (error) {
-              console.error('Delete error:', error);
               Alert.alert('Error', 'Failed to delete model');
             }
           }
         }
       ]
     );
-  };
-
-  const getDownloadProgress = (modelName: string): DownloadProgress | undefined => {
-    return downloads.find(d => d.modelName === modelName);
-  };
-
-  const isDownloaded = (fileName: string): boolean => {
-    return downloadedModels.includes(fileName);
-  };
-
-  const isDownloading = (modelName: string): boolean => {
-    return downloading === modelName || downloads.some(d => d.modelName === modelName && d.status === 'downloading');
   };
 
   if (loading) {
@@ -156,9 +140,9 @@ export const ModelDownloadScreen: React.FC = () => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Available Models</Text>
         {availableModels.map((model) => {
-          const progress = getDownloadProgress(model.name);
-          const downloaded = isDownloaded(model.fileName);
-          const downloading = isDownloading(model.name);
+          const isDownloaded = downloadedFiles.includes(model.fileName);
+          const progressState = progressMap[model.name];
+          const downloading = isDownloading && progressState != null;
           
           return (
             <View key={model.name} style={styles.modelCard}>
@@ -170,24 +154,21 @@ export const ModelDownloadScreen: React.FC = () => {
                 )}
               </View>
               
-              {downloading && progress && (
+              {downloading && progressState && (
                 <View style={styles.progressContainer}>
                   <Text style={styles.progressText}>
-                    {`${(progress.progress * 100).toFixed(1)}%`}
+                    {`${formatFileSize(progressState.writtenBytes)} / ${formatFileSize(progressState.totalBytes)} (${(progressState.progress * 100).toFixed(1)}%)`}
                   </Text>
                   <View style={styles.progressBar}>
                     <View 
-                      style={[
-                        styles.progressFill, 
-                        { width: `${progress.progress * 100}%` }
-                      ]} 
+                      style={[styles.progressFill, { width: `${progressState.progress * 100}%` }]} 
                     />
                   </View>
                 </View>
               )}
               
               <View style={styles.buttonContainer}>
-                {downloaded ? (
+                {isDownloaded ? (
                   <TouchableOpacity
                     style={[styles.button, styles.deleteButton]}
                     onPress={() => handleDeleteModel(model.fileName)}
@@ -196,16 +177,12 @@ export const ModelDownloadScreen: React.FC = () => {
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
-                    style={[
-                      styles.button, 
-                      styles.downloadButton,
-                      downloading && styles.disabledButton
-                    ]}
+                    style={[styles.button, styles.downloadButton, isDownloading && styles.disabledButton]}
                     onPress={() => handleDownload(model)}
-                    disabled={downloading}
+                    disabled={isDownloading}
                   >
                     <Text style={styles.buttonText}>
-                      {downloading ? 'Downloading...' : 'Download'}
+                      {downloading ? 'In Progress...' : 'Download'}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -213,21 +190,6 @@ export const ModelDownloadScreen: React.FC = () => {
             </View>
           );
         })}
-      </View>
-      
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Current Settings</Text>
-        <View style={styles.settingsCard}>
-          <Text style={styles.settingText}>
-            Sentence Transformer: {settingsService.getSentenceTransformerModel()}
-          </Text>
-          <Text style={styles.settingText}>
-            LLM Model: {settingsService.getLLMModelType()}
-          </Text>
-          <Text style={styles.settingText}>
-            Similarity Method: {settingsService.getSimilarityMethod()}
-          </Text>
-        </View>
       </View>
     </ScrollView>
   );
@@ -300,11 +262,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginBottom: 4,
+    textAlign: 'right',
   },
   progressBar: {
-    height: 4,
+    height: 6,
     backgroundColor: '#e0e0e0',
-    borderRadius: 2,
+    borderRadius: 3,
     overflow: 'hidden',
   },
   progressFill: {
@@ -336,19 +299,4 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  settingsCard: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  settingText: {
-    fontSize: 14,
-    color: '#333',
-    marginBottom: 8,
-  },
-}); 
+});

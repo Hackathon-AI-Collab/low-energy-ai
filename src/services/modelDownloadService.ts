@@ -1,35 +1,30 @@
 import * as FileSystem from 'expo-file-system';
 import { ModelSettingsService } from './modelSettings';
 
-export interface ModelDownloadOptions {
-  modelName: string;
-  modelType: 'sentence-transformer' | 'llm' | 'tokenizer';
-  url: string;
-  fileName: string;
-  expectedSize?: number;
-  onProgress?: (progress: number) => void;
-  onComplete?: (filePath: string) => void;
-  onError?: (error: Error) => void;
+export interface DownloadProgressData {
+  totalBytesWritten: number;
+  totalBytesExpectedToWrite: number;
 }
 
-export interface DownloadProgress {
+export interface ModelDownloadOptions {
   modelName: string;
-  progress: number;
-  downloadedBytes: number;
-  totalBytes: number;
-  status: 'downloading' | 'completed' | 'error' | 'cancelled';
-  error?: string;
+  modelType: 'sentence-transformer' | 'llm';
+  url: string;
+  fileName: string;
+  onProgress?: (progress: DownloadProgressData) => void;
+  onComplete?: (filePath: string) => void;
+  onError?: (error: Error) => void;
 }
 
 export class ModelDownloadService {
   private static instance: ModelDownloadService;
   private settings: ModelSettingsService;
-  private downloads: Map<string, DownloadProgress> = new Map();
   private downloadDirectory: string;
 
   private constructor() {
     this.settings = ModelSettingsService.getInstance();
     this.downloadDirectory = `${FileSystem.documentDirectory}models/`;
+    this.initialize();
   }
 
   static getInstance(): ModelDownloadService {
@@ -40,194 +35,87 @@ export class ModelDownloadService {
   }
 
   async initialize(): Promise<void> {
-    try {
-      // Create models directory if it doesn't exist
-      const dirInfo = await FileSystem.getInfoAsync(this.downloadDirectory);
-      if (!dirInfo.exists) {
-        await FileSystem.makeDirectoryAsync(this.downloadDirectory, { intermediates: true });
-        console.log('Created models directory:', this.downloadDirectory);
-      }
-    } catch (error) {
-      console.error('Failed to initialize model download service:', error);
+    const dirInfo = await FileSystem.getInfoAsync(this.downloadDirectory);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(this.downloadDirectory, { intermediates: true });
     }
   }
 
   async downloadModel(options: ModelDownloadOptions): Promise<string> {
     const { modelName, url, fileName, onProgress, onComplete, onError } = options;
-    
-    // Check if model already exists
     const filePath = `${this.downloadDirectory}${fileName}`;
     const fileInfo = await FileSystem.getInfoAsync(filePath);
-    
+
     if (fileInfo.exists) {
-      console.log(`Model ${modelName} already exists at ${filePath}`);
+      console.log(`Model ${modelName} already exists.`);
+      this.updateModelSettings(options.modelType, filePath);
       onComplete?.(filePath);
       return filePath;
     }
 
-    // Initialize download progress
-    const downloadId = `${modelName}-${Date.now()}`;
-    this.downloads.set(downloadId, {
-      modelName,
-      progress: 0,
-      downloadedBytes: 0,
-      totalBytes: 0,
-      status: 'downloading'
-    });
-
     try {
       console.log(`Starting download of ${modelName} from ${url}`);
-      
       const downloadResumable = FileSystem.createDownloadResumable(
         url,
         filePath,
         {},
         (downloadProgress) => {
-          const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
-          const downloadInfo = this.downloads.get(downloadId);
-          
-          if (downloadInfo) {
-            downloadInfo.progress = progress;
-            downloadInfo.downloadedBytes = downloadProgress.totalBytesWritten;
-            downloadInfo.totalBytes = downloadProgress.totalBytesExpectedToWrite;
-          }
-          
-          onProgress?.(progress);
+          const percentage = (downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite * 100).toFixed(1);
+          console.log(`[${modelName}] Progress: ${downloadProgress.totalBytesWritten} / ${downloadProgress.totalBytesExpectedToWrite} (${percentage}%)`);
+          onProgress?.(downloadProgress);
         }
       );
 
       const result = await downloadResumable.downloadAsync();
       const uri = result?.uri || filePath;
       
-      // Update download status
-      const downloadInfo = this.downloads.get(downloadId);
-      if (downloadInfo) {
-        downloadInfo.status = 'completed';
-        downloadInfo.progress = 1;
-      }
-
       console.log(`Successfully downloaded ${modelName} to ${uri}`);
+      this.updateModelSettings(options.modelType, uri);
       onComplete?.(uri);
-      
-      // Update settings with the downloaded model path
-      this.updateModelSettings(modelName, uri);
-      
-      // Notify that settings have changed (for reinitialization)
-      this.notifySettingsChanged(modelName);
-      
       return uri;
       
     } catch (error) {
       console.error(`Failed to download ${modelName}:`, error);
-      
-      // Update download status
-      const downloadInfo = this.downloads.get(downloadId);
-      if (downloadInfo) {
-        downloadInfo.status = 'error';
-        downloadInfo.error = error instanceof Error ? error.message : 'Unknown error';
-      }
-      
       onError?.(error instanceof Error ? error : new Error('Download failed'));
       throw error;
-    } finally {
-      // Clean up download info after a delay
-      setTimeout(() => {
-        this.downloads.delete(downloadId);
-      }, 5000);
     }
   }
 
-  private updateModelSettings(modelName: string, filePath: string): void {
-    try {
-      if (modelName.includes('sentence-transformer') || modelName.includes('all-MiniLM')) {
-        this.settings.setSentenceTransformerPath(filePath);
-        this.settings.setSentenceTransformerModel('local');
-        console.log(`Updated sentence transformer settings: ${filePath}`);
-      } else if (modelName.includes('gemma') || modelName.includes('Gemma-3-1b-it') || modelName.includes('GQA') || modelName.includes('int8')) {
-        // Gemma model is a real ONNX model, so we can set the path
-        this.settings.setLLMModelPath(filePath);
-        this.settings.setLLMModelType('onnx');
-        console.log(`Updated LLM settings for Gemma GQA Int8 model: ${filePath}`);
-      } else if (modelName.includes('llm')) {
-        // Only set LLM model path if the model actually exists and is valid
-        // For now, we'll use simulated ONNX mode since real LLM models aren't available
-        console.log(`LLM model downloaded but using simulated ONNX mode: ${filePath}`);
-        // Don't set the LLM model path to avoid loading non-existent files
-      }
-    } catch (error) {
-      console.error('Failed to update model settings:', error);
+  private updateModelSettings(modelType: 'llm' | 'sentence-transformer', filePath: string): void {
+    if (modelType === 'sentence-transformer') {
+      this.settings.setSentenceTransformerPath(filePath);
+      this.settings.setSentenceTransformerModel('local');
+    } else if (modelType === 'llm') {
+      this.settings.setLLMModelPath(filePath);
+      this.settings.setLLMModelType('gguf');
     }
   }
 
-  private notifySettingsChanged(modelName: string): void {
-    // This method can be used to notify other services that settings have changed
-    // For now, we'll just log it
-    console.log(`Settings updated for ${modelName}. Services may need to reinitialize.`);
-    
-    // If this is a sentence transformer model, we should reinitialize the Voy RAG
-    if (modelName.includes('sentence-transformer') || modelName.includes('all-MiniLM')) {
-      this.reinitializeVoyRAG();
-    }
-    
-    // If this is an LLM model, we should reinitialize the Voy RAG (which includes LLM service)
-    if (modelName.includes('llm') || modelName.includes('gemma') || modelName.includes('Gemma-3-1b-it') || modelName.includes('GQA') || modelName.includes('int8')) {
-      this.reinitializeVoyRAG();
-    }
-  }
-
-  private async reinitializeVoyRAG(): Promise<void> {
-    try {
-      // Import and reinitialize Voy RAG
-      const { VoyRAG } = await import('./voyRAG');
-      const voyRAG = new VoyRAG();
-      await voyRAG.reinitializeAfterModelDownload();
-      console.log('Voy RAG reinitialized after model download');
-    } catch (error) {
-      console.error('Failed to reinitialize Voy RAG:', error);
-    }
-  }
-
-
-
-  async getAvailableModels(): Promise<Array<{ name: string; type: string; url: string; fileName: string; size?: number }>> {
+  async getAvailableModels(): Promise<Array<{ name: string; type: 'llm' | 'sentence-transformer'; url: string; fileName: string; size?: number }>> {
     return [
       {
-        name: 'Xenova/all-MiniLM-L6-v2 (Sentence Transformer)',
+        name: 'Xenova/all-MiniLM-L6-v2 (ONNX)',
         type: 'sentence-transformer',
         url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx',
         fileName: 'all-MiniLM-L6-v2.onnx',
-        size: 90 * 1024 * 1024 // ~90MB
+        size: 90 * 1024 * 1024,
       },
       {
-        name: 'Gemma-3-1b-it-GQA (LLM) - ONNX Int8',
+        name: 'Gemma 3B-IT (GGUF Q2_K)',
         type: 'llm',
-        url: 'https://huggingface.co/onnx-community/gemma-3-1b-it-ONNX-GQA/resolve/main/onnx/model_int8.onnx',
-        fileName: 'gemma-3-1b-it-gqa-int8.onnx',
-        size: 1097 * 1024 * 1024 // ~1.07GB
+        url: 'https://huggingface.co/mradermacher/gemma-3n-E2B-GGUF/resolve/main/gemma-3n-E2B.Q2_K.gguf',
+        fileName: 'gemma-3n-E2B.Q2_K.gguf',
+        size: 1.89 * 1024 * 1024 * 1024,
       }
     ];
   }
 
-  async getDownloadProgress(modelName: string): Promise<DownloadProgress | null> {
-    for (const [_, download] of this.downloads) {
-      if (download.modelName === modelName) {
-        return download;
-      }
-    }
-    return null;
-  }
-
-  async getAllDownloads(): Promise<DownloadProgress[]> {
-    return Array.from(this.downloads.values());
-  }
-
-  async cancelDownload(modelName: string): Promise<void> {
-    for (const [downloadId, download] of this.downloads) {
-      if (download.modelName === modelName && download.status === 'downloading') {
-        download.status = 'cancelled';
-        console.log(`Cancelled download of ${modelName}`);
-        break;
-      }
+  async getDownloadedModels(): Promise<string[]> {
+    try {
+      const files = await FileSystem.readDirectoryAsync(this.downloadDirectory);
+      return files.map(file => `${this.downloadDirectory}${file}`);
+    } catch (error) {
+      return [];
     }
   }
 
@@ -241,32 +129,4 @@ export class ModelDownloadService {
       throw error;
     }
   }
-
-  async getDownloadedModels(): Promise<string[]> {
-    try {
-      const files = await FileSystem.readDirectoryAsync(this.downloadDirectory);
-      return files.filter(file => file.endsWith('.onnx'));
-    } catch (error) {
-      console.error('Failed to get downloaded models:', error);
-      return [];
-    }
-  }
-
-  async getModelInfo(fileName: string): Promise<{ size: number; lastModified: Date } | null> {
-    try {
-      const filePath = `${this.downloadDirectory}${fileName}`;
-      const fileInfo = await FileSystem.getInfoAsync(filePath);
-      
-      if (fileInfo.exists) {
-        return {
-          size: fileInfo.size || 0,
-          lastModified: new Date(fileInfo.modificationTime || Date.now())
-        };
-      }
-      return null;
-    } catch (error) {
-      console.error(`Failed to get model info for ${fileName}:`, error);
-      return null;
-    }
-  }
-} 
+}
