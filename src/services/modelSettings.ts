@@ -11,7 +11,7 @@ export interface ModelSettings {
   sentenceTransformerDimension: number;
   
   // Similarity Calculation Settings
-  similarityMethod: 'cos_sim' | 'manual' | 'auto';
+  similarityMethod: 'cos_sim' | 'auto';
   
   // Performance Settings
   useCache: boolean;
@@ -63,7 +63,7 @@ export class ModelSettingsService {
       // Advanced
       allowRemoteModels: true,
       allowLocalModels: true,
-      useBrowserCache: true
+      useBrowserCache: false // Disabled for React Native compatibility
     };
   }
 
@@ -150,12 +150,12 @@ export class ModelSettingsService {
   }
 
   // Similarity Method
-  setSimilarityMethod(method: 'cos_sim' | 'manual' | 'auto'): void {
+  setSimilarityMethod(method: 'cos_sim' | 'auto'): void {
     this.settings.similarityMethod = method;
     this.saveSettings();
   }
 
-  getSimilarityMethod(): 'cos_sim' | 'manual' | 'auto' {
+  getSimilarityMethod(): 'cos_sim' | 'auto' {
     return this.settings.similarityMethod;
   }
 
