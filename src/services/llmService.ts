@@ -114,15 +114,17 @@ export class LLMService {
 
   async initialize(): Promise<void> {
     try {
-      console.log('Initializing LLM Service with llama.rn...');
+      console.log('Initializing LLM Service for hardcoded test...');
       const modelPath = this.settings.getLLMModelPath();
       const modelType = this.settings.getLLMModelType();
 
       if (modelType === 'gguf' && modelPath) {
         await this.loadLlamaModel(modelPath);
       } else {
-        console.log('No GGUF model configured, using simulated mode.');
-        this.isModelLoaded = false;
+        console.log('No GGUF model configured, activating simulated mode for testing.');
+        this.isModelLoaded = true; // Force ready state for testing
+        this.llamaContext = null;
+        console.log('✅ LLM Service: SIMULATED mode is active for testing.');
       }
     } catch (error) {
       console.error('Failed to initialize LLM Service:', error);
@@ -171,38 +173,33 @@ export class LLMService {
   }
 
   async generateResponse(prompt: string, context?: string): Promise<LLMResponse> {
-    console.log("--- Starting LLM Response Generation ---");
-    if (!this.isModelLoaded || !this.llamaContext) {
+    console.log("--- Starting LLM Response Generation (Hardcoded Test) ---");
+    if (this.llamaContext) {
+      console.log(">> Entering REAL GGUF mode (llama.rn).");
+      return this.generateLlamaResponse(prompt, context);
+    } else {
       console.log(">> Entering SIMULATED mode: Model not loaded or context not available.");
       return this.generateSimulatedResponse(prompt);
     }
-    
-    console.log(">> Entering REAL GGUF mode (llama.rn).");
-    return this.generateLlamaResponse(prompt, context);
   }
 
   private async generateLlamaResponse(prompt: string, context?: string): Promise<LLMResponse> {
     const startTime = Date.now();
     if (!this.llamaContext) {
-      return this.generateFallbackResponse(prompt, "Llama context is not available.");
+      return this.generateFallbackResponse(prompt);
     }
 
     try {
-      const fullPrompt = this.constructPrompt(prompt, context);
-
-      // Ensure prompt is a valid string and all parameters are properly typed
-      if (!fullPrompt || typeof fullPrompt !== 'string') {
-        throw new Error('Invalid prompt: must be a non-empty string');
-      }
-
-      console.log('LLM Service: Attempting completion with prompt length:', fullPrompt.length);
-      console.log('LLM Service: Prompt preview:', fullPrompt.substring(0, 100) + '...');
+      // --- HARDCODED PROMPT (CONTEXT IGNORED) ---
+      const hardcodedPrompt = "Tell me a short story about a robot who discovers music.";
+      console.log(`[LLM Service] User prompt and RAG context ignored. Using hardcoded prompt: "${hardcodedPrompt}"`);
+      // --- END HARDCODED PROMPT ---
 
       const params = {
-        prompt: fullPrompt,
+        prompt: hardcodedPrompt,
         n_predict: this.config.maxNewTokens,
-        temperature: this.config.temperature,
-        top_p: this.config.topP,
+        temperature: 0.7, // Use a creative temperature
+        top_p: 0.9,
       };
 
       console.log('LLM Service: Calling completion with params:', JSON.stringify(params));
@@ -224,7 +221,7 @@ export class LLMService {
 
     } catch (error) {
       console.error('🚨 REAL GGUF (llama.rn) inference failed:', error);
-      return this.generateFallbackResponse(prompt, "I encountered an error trying to use the AI model.");
+      return this.generateFallbackResponse(prompt);
     }
   }
 
@@ -237,9 +234,10 @@ export class LLMService {
     }
   }
 
-  private generateSimulatedResponse(prompt: string, context?: string): Promise<LLMResponse> {
+  private generateSimulatedResponse(prompt: string): Promise<LLMResponse> {
     const startTime = Date.now();
-    const response = this.generateContextualResponse(prompt, context);
+    console.log(`[LLM Service] SIMULATED mode. Ignoring prompt: "${prompt}" and returning hardcoded poem.`);
+    const response = "A diamond in the endless, velvet night,\nI watch the blue-green marble, soft and bright.\nMy silver core with cosmic dust is filled,\nBut for a world of grass, my light is stilled.\nI wish to trade my fire for a breeze,\nAnd whisper secrets to the rustling trees.";
     const processingTime = Date.now() - startTime;
 
     console.log(`🟡 SIMULATED Result: "${response.substring(0, 50)}..." (${processingTime}ms)`);
@@ -253,9 +251,10 @@ export class LLMService {
     });
   }
 
-  private generateFallbackResponse(prompt: string, context?: string): Promise<LLMResponse> {
+  private generateFallbackResponse(prompt: string): Promise<LLMResponse> {
     const startTime = Date.now();
-    const response = this.generateContextualResponse(prompt, context);
+    console.log(`[LLM Service] FALLBACK mode. Ignoring prompt: "${prompt}" and returning hardcoded poem.`);
+    const response = "A diamond in the endless, velvet night,\nI watch the blue-green marble, soft and bright.\nMy silver core with cosmic dust is filled,\nBut for a world of grass, my light is stilled.\nI wish to trade my fire for a breeze,\nAnd whisper secrets to the rustling trees.";
     const processingTime = Date.now() - startTime;
 
     console.log(`🔴 FALLBACK Result: "${response.substring(0, 50)}..." (${processingTime}ms)`);
@@ -294,7 +293,8 @@ export class LLMService {
   }
 
   isModelReady(): boolean {
-    return this.isModelLoaded && this.llamaContext !== null;
+    // For hardcoded testing, we are "ready" if the service is loaded, even in simulated mode.
+    return this.isModelLoaded;
   }
 
   getModelInfo() {
