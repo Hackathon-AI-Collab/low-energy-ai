@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export interface ModelSettings {
   // LLM Model Settings
   llmModelPath?: string;
-  llmModelType: 'gguf' | 'onnx' | 'fallback';
+  llmModelType: 'gguf' | 'fallback'; // Removed 'onnx' - only GGUF supported for LLM
   llmModelName?: string;
   
   // Sentence Transformer Settings
@@ -75,7 +75,7 @@ export class ModelSettingsService {
 
   private getDefaultSettings(): ModelSettings {
     return {
-      // LLM defaults - Use GGUF mode for llama.rn integration
+      // LLM defaults - Use GGUF mode for llama.rn integration (no ONNX support)
       llmModelType: 'gguf',
       llmModelName: 'simulated-llm',
       llmModelPath: undefined, // Don't set a path to avoid loading non-existent files
@@ -137,15 +137,25 @@ export class ModelSettingsService {
   // LLM Model Methods
   setLLMModelPath(path: string): void {
     console.log('Setting LLM model path:', path);
-    this.settings.llmModelPath = path;
-    // Determine model type based on file extension
-    if (path.includes('.gguf')) {
-      this.settings.llmModelType = 'gguf';
-    } else if (path.includes('.onnx')) {
-      this.settings.llmModelType = 'onnx';
-    } else {
-      this.settings.llmModelType = 'gguf'; // Default to GGUF for llama.rn
+    
+    // Fix duplicate path issue
+    let cleanPath = path;
+    if (path.includes('file:///data/user/0/com.anonymous.leaiplatform/files/models/file:///data/user/0/com.anonymous.leaiplatform/files/models/')) {
+      cleanPath = path.replace('file:///data/user/0/com.anonymous.leaiplatform/files/models/file:///data/user/0/com.anonymous.leaiplatform/files/models/', 'file:///data/user/0/com.anonymous.leaiplatform/files/models/');
+      console.log('ModelSettings: Fixed duplicate path:', cleanPath);
     }
+    
+    this.settings.llmModelPath = cleanPath;
+    
+    // Determine model type based on file extension
+    if (cleanPath.includes('.gguf')) {
+      this.settings.llmModelType = 'gguf';
+      console.log('ModelSettings: Detected GGUF model, setting type to gguf');
+    } else {
+      this.settings.llmModelType = 'gguf'; // Default to GGUF for llama.rn (no ONNX support)
+      console.log('ModelSettings: No .gguf extension detected, defaulting to gguf');
+    }
+    
     this.saveSettings().catch(error => {
       console.warn('Failed to save LLM model path:', error);
     });
@@ -155,7 +165,7 @@ export class ModelSettingsService {
     return this.settings.llmModelPath;
   }
 
-  setLLMModelType(type: 'gguf' | 'onnx' | 'fallback'): void {
+  setLLMModelType(type: 'gguf' | 'fallback'): void {
     console.log('Setting LLM model type:', type);
     this.settings.llmModelType = type;
     this.saveSettings().catch(error => {
@@ -163,7 +173,7 @@ export class ModelSettingsService {
     });
   }
 
-  getLLMModelType(): 'gguf' | 'onnx' | 'fallback' {
+  getLLMModelType(): 'gguf' | 'fallback' {
     return this.settings.llmModelType;
   }
 
@@ -288,7 +298,7 @@ export class ModelSettingsService {
 
   // Utility Methods
   isLLMReady(): boolean {
-    const ready = (this.settings.llmModelType === 'onnx' || this.settings.llmModelType === 'gguf') && !!this.settings.llmModelPath;
+    const ready = this.settings.llmModelType === 'gguf' && !!this.settings.llmModelPath;
     console.log('ModelSettings: isLLMReady check:', {
       modelType: this.settings.llmModelType,
       modelPath: this.settings.llmModelPath,

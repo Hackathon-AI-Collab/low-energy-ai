@@ -35,6 +35,7 @@ export class VoyRAG {
 
   private handleSettingsChange(settings: any): void {
     console.log('Voy RAG: Settings changed, checking for LLM updates...');
+    console.log('Voy RAG: Full settings received:', JSON.stringify(settings, null, 2));
     
     const newLLMModelPath = settings.llmModelPath;
     const newLLMModelType = settings.llmModelType;
@@ -42,7 +43,7 @@ export class VoyRAG {
     console.log('Voy RAG: New LLM model path:', newLLMModelPath, 'Type:', newLLMModelType);
     
     // If LLM settings changed, reinitialize LLM service
-    if (newLLMModelPath || newLLMModelType === 'onnx') {
+    if (newLLMModelPath || newLLMModelType === 'gguf') {
       console.log('Voy RAG: LLM settings changed, reinitializing LLM service...');
       this.reinitializeLLMService().catch(error => {
         console.error('Voy RAG: Failed to reinitialize LLM service after settings change:', error);
