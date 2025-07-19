@@ -7,10 +7,11 @@ config.resolver.platforms = ['ios', 'android', 'native', 'web'];
 config.resolver.resolverMainFields = ['react-native', 'browser', 'main'];
 
 // Ignore problematic files that cause bundling issues
+// But allow ONNX Runtime React Native
 config.resolver.blockList = [
   /node_modules\/voy-search\/.*\.wasm$/,
   /.*voy_search_bg\.wasm$/,
-  /.*onnxruntime_binding\.node$/,
+  // Allow ONNX Runtime React Native but block other problematic bindings
   /.*napi-v3\/.*\/onnxruntime_binding\.node$/,
   /.*bin\/napi-v3\/.*\/onnxruntime_binding\.node$/,
 ];

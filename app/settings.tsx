@@ -1,6 +1,7 @@
 import { Link } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import ModelSelectionCard from '../src/components/ModelSelectionCard';
 import { ModelSettingsService } from '../src/services/modelSettings';
 
 export default function SettingsScreen() {
@@ -21,6 +22,22 @@ export default function SettingsScreen() {
   const handleLLMTypeChange = (modelType: 'onnx' | 'fallback') => {
     updateSetting('llmModelType', modelType);
     Alert.alert('LLM Type Changed', `LLM model type changed to: ${modelType}`);
+  };
+
+  const handleLLMModelSelect = (modelPath: string, modelType: string) => {
+    console.log('Settings: Selecting LLM model:', modelPath, 'Type:', modelType);
+    settingsService.setLLMModelPath(modelPath);
+    settingsService.setLLMModelType(modelType as 'onnx' | 'fallback');
+    setSettings(settingsService.getSettings());
+    Alert.alert('LLM Model Selected', `Selected: ${modelPath.split('/').pop()}`);
+  };
+
+  const handleSentenceTransformerModelSelect = (modelPath: string, modelType: string) => {
+    console.log('Settings: Selecting Sentence Transformer model:', modelPath, 'Type:', modelType);
+    settingsService.setSentenceTransformerPath(modelPath);
+    settingsService.setSentenceTransformerModel(modelType as 'xenova' | 'local' | 'hash');
+    setSettings(settingsService.getSettings());
+    Alert.alert('Sentence Transformer Model Selected', `Selected: ${modelPath.split('/').pop()}`);
   };
 
   const handleSimilarityMethodChange = (method: 'cos_sim' | 'auto') => {
@@ -79,65 +96,21 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </Link>
         
-        <TouchableOpacity 
-          style={styles.settingCard}
-          onPress={() => {
-            Alert.alert(
-              'Sentence Transformer Model Type',
-              'Choose the model type:',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Xenova (Remote)', onPress: () => handleModelTypeChange('xenova') },
-                { text: 'Local (ONNX)', onPress: () => handleModelTypeChange('local') },
-                { text: 'Hash-based', onPress: () => handleModelTypeChange('hash') }
-              ]
-            );
-          }}
-        >
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>Sentence Transformer</Text>
-              <Text style={styles.settingValue}>
-                Model: {settings.sentenceTransformerModel}
-              </Text>
-              <Text style={styles.settingValue}>
-                Name: {settings.sentenceTransformerName}
-              </Text>
-              <Text style={styles.settingValue}>
-                Dimension: {settings.sentenceTransformerDimension}
-              </Text>
-            </View>
-            <Text style={styles.tapHint}>Tap to change</Text>
-          </View>
-        </TouchableOpacity>
+        <ModelSelectionCard
+          title="LLM Model Selection"
+          modelType="llm"
+          currentModelPath={settings.llmModelPath}
+          currentModelType={settings.llmModelType}
+          onModelSelect={handleLLMModelSelect}
+        />
         
-        <TouchableOpacity 
-          style={styles.settingCard}
-          onPress={() => {
-            Alert.alert(
-              'LLM Model Type',
-              'Choose the LLM type:',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'ONNX (Local)', onPress: () => handleLLMTypeChange('onnx') },
-                { text: 'Fallback', onPress: () => handleLLMTypeChange('fallback') }
-              ]
-            );
-          }}
-        >
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>LLM Model</Text>
-              <Text style={styles.settingValue}>
-                Type: {settings.llmModelType}
-              </Text>
-              <Text style={styles.settingValue}>
-                Name: {settings.llmModelName}
-              </Text>
-            </View>
-            <Text style={styles.tapHint}>Tap to change</Text>
-          </View>
-        </TouchableOpacity>
+        <ModelSelectionCard
+          title="Sentence Transformer Model Selection"
+          modelType="sentenceTransformer"
+          currentModelPath={settings.sentenceTransformerPath}
+          currentModelType={settings.sentenceTransformerModel}
+          onModelSelect={handleSentenceTransformerModelSelect}
+        />
       </View>
       
       <View style={styles.section}>
@@ -208,13 +181,13 @@ export default function SettingsScreen() {
             />
           </View>
         </View>
-
+        
         <View style={styles.settingCard}>
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
               <Text style={styles.settingTitle}>Allow Local Models</Text>
               <Text style={styles.settingValue}>
-                Use models stored on device
+                Use locally stored models
               </Text>
             </View>
             <Switch
@@ -225,7 +198,7 @@ export default function SettingsScreen() {
             />
           </View>
         </View>
-
+        
         <View style={styles.settingCard}>
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
@@ -243,15 +216,10 @@ export default function SettingsScreen() {
           </View>
         </View>
       </View>
-
+      
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Actions</Text>
-        
-        <TouchableOpacity style={[styles.settingCard, styles.dangerCard]} onPress={resetToDefaults}>
-          <Text style={[styles.settingTitle, styles.dangerText]}>Reset to Defaults</Text>
-          <Text style={styles.settingDescription}>
-            Reset all settings to their default values
-          </Text>
+        <TouchableOpacity style={styles.resetButton} onPress={resetToDefaults}>
+          <Text style={styles.resetButtonText}>Reset to Defaults</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -325,5 +293,19 @@ const styles = StyleSheet.create({
   },
   dangerText: {
     color: '#FF3B30',
+  },
+  resetButton: {
+    backgroundColor: '#FF3B30',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  resetButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 }); 

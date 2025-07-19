@@ -1,16 +1,27 @@
 import { ModelSettingsService } from './modelSettings';
 
-// Try to import ONNX Runtime, but handle the case where it's not available
+// ONNX Runtime will be imported conditionally when needed
 let InferenceSession: any = null;
 let Tensor: any = null;
+let onnxRuntimeLoaded = false;
 
-try {
-  const onnxRuntime = require('onnxruntime-react-native');
-  InferenceSession = onnxRuntime.InferenceSession;
-  Tensor = onnxRuntime.Tensor;
-} catch (error) {
-  console.warn('ONNX Runtime not available:', error);
-  // ONNX Runtime will be null, and we'll use hash-based embeddings
+async function loadONNXRuntime() {
+  if (onnxRuntimeLoaded) return;
+  
+  try {
+    console.log('Sentence Transformer: Attempting to import ONNX Runtime...');
+    const onnxRuntime = require('onnxruntime-react-native');
+    InferenceSession = onnxRuntime.InferenceSession;
+    Tensor = onnxRuntime.Tensor;
+    onnxRuntimeLoaded = true;
+    console.log('Sentence Transformer: ONNX Runtime imported successfully');
+  } catch (error) {
+    console.warn('Sentence Transformer: ONNX Runtime not available:', error);
+    if (error instanceof Error) {
+      console.warn('Sentence Transformer: Error details:', error.message);
+    }
+    // ONNX Runtime will be null, and we'll use hash-based embeddings
+  }
 }
 
 // Simple local tokenizer that doesn't require network downloads
@@ -57,6 +68,7 @@ class LocalTokenizer {
     const tokens = text.toLowerCase().split(/\s+/);
     const inputIds = [this.vocab.get('[CLS]') || 2];
     const attentionMask = [1];
+    const tokenTypeIds = [0]; // All tokens are from the first sequence
     
     for (const token of tokens) {
       if (inputIds.length >= this.maxLength - 1) break;
@@ -64,25 +76,32 @@ class LocalTokenizer {
       const tokenId = this.vocab.get(token) || this.vocab.get('[UNK]') || 1;
       inputIds.push(tokenId);
       attentionMask.push(1);
+      tokenTypeIds.push(0); // All tokens are from the first sequence
     }
     
     inputIds.push(this.vocab.get('[SEP]') || 3);
     attentionMask.push(1);
+    tokenTypeIds.push(0);
     
     // Pad to max length
     while (inputIds.length < this.maxLength) {
       inputIds.push(this.vocab.get('[PAD]') || 0);
       attentionMask.push(0);
+      tokenTypeIds.push(0);
     }
     
     return {
       input_ids: {
-        data: new Int32Array(inputIds),
+        data: new BigInt64Array(inputIds.map(id => BigInt(id))),
         dims: [1, inputIds.length]
       },
       attention_mask: {
-        data: new Int32Array(attentionMask),
+        data: new BigInt64Array(attentionMask.map(mask => BigInt(mask))),
         dims: [1, attentionMask.length]
+      },
+      token_type_ids: {
+        data: new BigInt64Array(tokenTypeIds.map(id => BigInt(id))),
+        dims: [1, tokenTypeIds.length]
       }
     };
   }
@@ -156,17 +175,22 @@ export class SentenceTransformer {
         if (!modelPath) {
           console.warn('Local model path not set, using hash-based embeddings');
           this.isModelLoaded = false;
-        } else if (!InferenceSession) {
-          console.warn('ONNX Runtime not available, using hash-based embeddings');
-          this.isModelLoaded = false;
         } else {
-          try {
-            this.model = await InferenceSession.create(modelPath as string);
-            this.isModelLoaded = true;
-            console.log(`Loaded local ONNX model from: ${modelPath}`);
-          } catch (error) {
-            console.error('Failed to load local ONNX model:', error);
+          // Try to load ONNX Runtime if not already loaded
+          await loadONNXRuntime();
+          
+          if (!InferenceSession) {
+            console.warn('ONNX Runtime not available, using hash-based embeddings');
             this.isModelLoaded = false;
+          } else {
+            try {
+              this.model = await InferenceSession.create(modelPath as string);
+              this.isModelLoaded = true;
+              console.log(`Loaded local ONNX model from: ${modelPath}`);
+            } catch (error) {
+              console.error('Failed to load local ONNX model:', error);
+              this.isModelLoaded = false;
+            }
           }
         }
       } else {
@@ -184,19 +208,28 @@ export class SentenceTransformer {
 
   async generateEmbedding(text: string): Promise<number[]> {
     // If we have a model and tokenizer, try to use ONNX Runtime
-    if (this.isModelLoaded && this.model && this.tokenizer && Tensor) {
+    if (this.isModelLoaded && this.model && this.tokenizer) {
+      // Ensure ONNX Runtime is loaded
+      await loadONNXRuntime();
+      
+      if (!Tensor) {
+        console.warn('ONNX Runtime Tensor not available, falling back to hash embeddings');
+        return this.generateHashEmbedding(text);
+      }
       try {
         // Tokenize the text using local tokenizer
         const inputs = await this.tokenizer.tokenize(text);
 
         // Convert to ONNX format
-        const inputTensor = new Tensor('int32', inputs.input_ids.data, inputs.input_ids.dims);
-        const attentionMask = new Tensor('int32', inputs.attention_mask.data, inputs.attention_mask.dims);
+        const inputTensor = new Tensor('int64', inputs.input_ids.data, inputs.input_ids.dims);
+        const attentionMask = new Tensor('int64', inputs.attention_mask.data, inputs.attention_mask.dims);
+        const tokenTypeIds = new Tensor('int64', inputs.token_type_ids.data, inputs.token_type_ids.dims);
 
         // Run inference
         const results = await this.model.run({
           input_ids: inputTensor,
-          attention_mask: attentionMask
+          attention_mask: attentionMask,
+          token_type_ids: tokenTypeIds
         });
 
         // Extract embeddings (assuming the model outputs embeddings directly)
