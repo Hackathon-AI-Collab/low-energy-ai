@@ -138,7 +138,14 @@ export class ModelSettingsService {
   setLLMModelPath(path: string): void {
     console.log('Setting LLM model path:', path);
     this.settings.llmModelPath = path;
-    this.settings.llmModelType = 'onnx';
+    // Determine model type based on file extension
+    if (path.includes('.gguf')) {
+      this.settings.llmModelType = 'gguf';
+    } else if (path.includes('.onnx')) {
+      this.settings.llmModelType = 'onnx';
+    } else {
+      this.settings.llmModelType = 'gguf'; // Default to GGUF for llama.rn
+    }
     this.saveSettings().catch(error => {
       console.warn('Failed to save LLM model path:', error);
     });
@@ -259,13 +266,18 @@ export class ModelSettingsService {
       const modelDownloadService = (await import('./modelDownloadService')).ModelDownloadService.getInstance();
       const downloadedModels = await modelDownloadService.getDownloadedModels();
       
+      console.log('ModelSettings: All downloaded models:', downloadedModels);
+      
       const llmModels = downloadedModels.filter(model => 
-        model.includes('phi') || model.includes('llama') || model.includes('llm')
+        model.includes('phi') || model.includes('llama') || model.includes('llm') || model.includes('gguf') || model.includes('gemma')
       );
       
       const sentenceTransformerModels = downloadedModels.filter(model => 
         model.includes('all-MiniLM') || model.includes('sentence')
       );
+      
+      console.log('ModelSettings: Detected LLM models:', llmModels);
+      console.log('ModelSettings: Detected sentence transformer models:', sentenceTransformerModels);
       
       return { llm: llmModels, sentenceTransformer: sentenceTransformerModels };
     } catch (error) {
@@ -276,7 +288,13 @@ export class ModelSettingsService {
 
   // Utility Methods
   isLLMReady(): boolean {
-    return this.settings.llmModelType === 'onnx' && !!this.settings.llmModelPath;
+    const ready = (this.settings.llmModelType === 'onnx' || this.settings.llmModelType === 'gguf') && !!this.settings.llmModelPath;
+    console.log('ModelSettings: isLLMReady check:', {
+      modelType: this.settings.llmModelType,
+      modelPath: this.settings.llmModelPath,
+      ready: ready
+    });
+    return ready;
   }
 
   isSentenceTransformerReady(): boolean {
