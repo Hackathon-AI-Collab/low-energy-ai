@@ -11,6 +11,7 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { simpleAppTest } from '../src/services/simpleAppTest';
@@ -141,13 +142,18 @@ export default function ChatScreen() {
   };
 
   const renderMessage = ({ item }: { item: Message }) => (
-    <View style={[styles.message, item.isUser ? styles.userMessage : styles.botMessage(themeColors)]}>
-      <Text style={[styles.messageText, item.isUser ? styles.userMessageText : styles.botMessageText(themeColors)]}>
-        {item.text}
-      </Text>
-      <Text style={styles.timestamp}>
-        {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-      </Text>
+    <View style={[styles.messageContainer, item.isUser ? styles.userMessageContainer : styles.botMessageContainer]}>
+      {!item.isUser && (
+        <Image source={require('../assets/images/icon.png')} style={styles.avatar} />
+      )}
+      <View style={[styles.message, item.isUser ? styles.userMessage : styles.botMessage(themeColors)]}>
+        <Text style={[styles.messageText, item.isUser ? styles.userMessageText : styles.botMessageText(themeColors)]}>
+          {item.text}
+        </Text>
+        <Text style={[styles.timestamp, item.isUser ? styles.userTimestamp : styles.botTimestamp]}>
+          {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+      </View>
     </View>
   );
 
@@ -159,19 +165,15 @@ export default function ChatScreen() {
         keyboardVerticalOffset={headerHeight}
       >
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>LEAI Assistant</Text>
-          <Text style={styles.headerSubtitle}>Low-Energy AI Platform</Text>
+          <View>
+            <Text style={styles.headerTitle}>LEAI Assistant</Text>
+            <Text style={styles.headerSubtitle}>Low-Energy AI Platform</Text>
+          </View>
           <View style={styles.navButtons}>
-            <TouchableOpacity 
-              style={styles.navButton} 
-              onPress={() => router.push('/knowledge-base')}
-            >
-              <Text style={styles.navButtonText}>Knowledge Base</Text>
+            <TouchableOpacity onPress={() => router.push('/knowledge-base')}>
+              <Text style={styles.navButtonText}>Docs</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.navButton} 
-              onPress={() => router.push('/settings')}
-            >
+            <TouchableOpacity onPress={() => router.push('/settings')}>
               <Text style={styles.navButtonText}>Settings</Text>
             </TouchableOpacity>
           </View>
@@ -183,14 +185,15 @@ export default function ChatScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderMessage}
           style={styles.messagesList}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          contentContainerStyle={styles.messagesListContent}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
         />
         
         {isLoading && (
           <View style={styles.loadingContainer(themeColors)}>
-            <ActivityIndicator size="small" color="#007AFF" />
-            <Text style={styles.loadingText}>Processing...</Text>
+            <ActivityIndicator size="small" color={themeColors.tint} />
+            <Text style={styles.loadingText(themeColors)}>Processing...</Text>
           </View>
         )}
         
@@ -200,9 +203,8 @@ export default function ChatScreen() {
             value={inputText}
             onChangeText={setInputText}
             placeholder="Ask a question..."
-            placeholderTextColor="#999"
+            placeholderTextColor={themeColors.icon}
             multiline
-            maxLength={500}
             editable={!isLoading && isInitialized}
           />
           <TouchableOpacity 
@@ -224,62 +226,70 @@ const styles = StyleSheet.create({
     backgroundColor: themeColors.background,
   }),
   header: {
-    backgroundColor: '#007AFF',
-    padding: 20,
-    paddingTop: 50,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#007AFF',
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#fff',
-    opacity: 0.8,
-    marginTop: 2,
+    color: '#666',
   },
   navButtons: {
     flexDirection: 'row',
-    marginTop: 15,
-    gap: 10,
-  },
-  navButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 15,
+    gap: 20,
   },
   navButtonText: {
-    color: '#fff',
-    fontSize: 14,
+    fontSize: 16,
+    color: '#007AFF',
     fontWeight: '500',
   },
   messagesList: {
     flex: 1,
+  },
+  messagesListContent: {
     padding: 10,
   },
-  message: {
+  messageContainer: {
+    flexDirection: 'row',
     marginVertical: 5,
-    padding: 15,
-    borderRadius: 15,
     maxWidth: '85%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+  },
+  userMessageContainer: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row-reverse',
+  },
+  botMessageContainer: {
+    alignSelf: 'flex-start',
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 10,
+    backgroundColor: '#E9E9E9',
+  },
+  message: {
+    padding: 15,
+    borderRadius: 20,
   },
   userMessage: {
     backgroundColor: '#007AFF',
-    alignSelf: 'flex-end',
     borderBottomRightRadius: 5,
   },
   botMessage: (themeColors) => ({
     backgroundColor: themeColors.background,
-    alignSelf: 'flex-start',
     borderBottomLeftRadius: 5,
+    borderColor: '#E9E9E9',
+    borderWidth: 1,
   }),
   messageText: {
     fontSize: 16,
@@ -293,53 +303,53 @@ const styles = StyleSheet.create({
   }),
   timestamp: {
     fontSize: 12,
-    color: '#999',
-    marginTop: 5,
+    marginTop: 8,
+  },
+  userTimestamp: {
+    color: 'rgba(255, 255, 255, 0.7)',
     alignSelf: 'flex-end',
+  },
+  botTimestamp: {
+    color: '#999',
+    alignSelf: 'flex-start',
   },
   loadingContainer: (themeColors) => ({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 10,
-    backgroundColor: themeColors.background,
-    marginHorizontal: 10,
-    borderRadius: 10,
-    marginBottom: 10,
   }),
-  loadingText: {
+  loadingText: (themeColors) => ({
     marginLeft: 10,
-    color: '#666',
+    color: themeColors.text,
     fontSize: 14,
-  },
+  }),
   inputContainer: (themeColors) => ({
     flexDirection: 'row',
+    alignItems: 'center',
     padding: 15,
-    backgroundColor: themeColors.background,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: 'rgba(0, 0, 0, 0.1)',
   }),
   input: (themeColors) => ({
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 20,
-    padding: 12,
-    marginRight: 10,
+    backgroundColor: '#E9E9E9',
+    borderRadius: 25,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     fontSize: 16,
-    maxHeight: 100,
     color: themeColors.text,
   }),
   sendButton: {
+    marginLeft: 10,
     backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 20,
+    borderRadius: 25,
+    padding: 15,
     justifyContent: 'center',
     alignItems: 'center',
   },
   sendButtonDisabled: {
-    backgroundColor: '#ccc',
+    backgroundColor: '#B0C4DE',
   },
   sendButtonText: {
     color: '#fff',

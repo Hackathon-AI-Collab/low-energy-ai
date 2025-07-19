@@ -3,25 +3,19 @@ import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import ModelSelectionCard from '../src/components/ModelSelectionCard';
 import { ModelSettingsService } from '../src/services/modelSettings';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { Colors } from '@/constants/Colors';
 
 export default function SettingsScreen() {
   const [settings, setSettings] = useState(ModelSettingsService.getInstance().getSettings());
   const settingsService = ModelSettingsService.getInstance();
+  const colorScheme = useColorScheme();
+  const themeColors = Colors[colorScheme ?? 'light'];
 
   const updateSetting = (key: keyof typeof settings, value: any) => {
     const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
     settingsService.updateSettings(newSettings);
-  };
-
-  const handleModelTypeChange = (modelType: 'xenova' | 'local' | 'hash') => {
-    updateSetting('sentenceTransformerModel', modelType);
-    Alert.alert('Model Type Changed', `Sentence Transformer model type changed to: ${modelType}`);
-  };
-
-  const handleLLMTypeChange = (modelType: 'onnx' | 'fallback') => {
-    updateSetting('llmModelType', modelType);
-    Alert.alert('LLM Type Changed', `LLM model type changed to: ${modelType}`);
   };
 
   const handleLLMModelSelect = (modelPath: string, modelType: string) => {
@@ -45,22 +39,6 @@ export default function SettingsScreen() {
     Alert.alert('Similarity Method Changed', `Similarity method changed to: ${method}`);
   };
 
-  const handleCacheToggle = (value: boolean) => {
-    updateSetting('useCache', value);
-  };
-
-  const handleRemoteModelsToggle = (value: boolean) => {
-    updateSetting('allowRemoteModels', value);
-  };
-
-  const handleLocalModelsToggle = (value: boolean) => {
-    updateSetting('allowLocalModels', value);
-  };
-
-  const handleBrowserCacheToggle = (value: boolean) => {
-    updateSetting('useBrowserCache', value);
-  };
-
   const resetToDefaults = () => {
     Alert.alert(
       'Reset Settings',
@@ -80,19 +58,37 @@ export default function SettingsScreen() {
     );
   };
 
+  const SettingRow = ({ title, description, value, onValueChange }) => (
+    <View style={styles.settingCard(themeColors)}>
+      <View style={styles.settingInfo}>
+        <Text style={styles.settingTitle(themeColors)}>{title}</Text>
+        {description && <Text style={styles.settingDescription(themeColors)}>{description}</Text>}
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: '#767577', true: themeColors.tint }}
+        thumbColor={value ? themeColors.tint : '#f4f3f4'}
+      />
+    </View>
+  );
+
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>Settings</Text>
+    <ScrollView style={styles.container(themeColors)} contentContainerStyle={styles.contentContainer}>
+      <Text style={styles.title(themeColors)}>Settings</Text>
       
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Model Configuration</Text>
+        <Text style={styles.sectionTitle(themeColors)}>Model Configuration</Text>
         
         <Link href="/model-downloads" asChild>
-          <TouchableOpacity style={styles.settingCard}>
-            <Text style={styles.settingTitle}>Model Downloads</Text>
-            <Text style={styles.settingDescription}>
-              Download and manage ONNX models for offline use
-            </Text>
+          <TouchableOpacity style={styles.settingCard(themeColors)}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingTitle(themeColors)}>Model Downloads</Text>
+              <Text style={styles.settingDescription(themeColors)}>
+                Download and manage ONNX models for offline use
+              </Text>
+            </View>
+            <Text style={styles.arrow(themeColors)}>&gt;</Text>
           </TouchableOpacity>
         </Link>
         
@@ -114,30 +110,17 @@ export default function SettingsScreen() {
       </View>
       
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Performance</Text>
+        <Text style={styles.sectionTitle(themeColors)}>Performance</Text>
         
-        <View style={styles.settingCard}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>Use Cache</Text>
-              <Text style={styles.settingValue}>
-                Cache Size: {settings.cacheSize}
-              </Text>
-              <Text style={styles.settingValue}>
-                Batch Size: {settings.batchSize}
-              </Text>
-            </View>
-            <Switch
-              value={settings.useCache}
-              onValueChange={handleCacheToggle}
-              trackColor={{ false: '#767577', true: '#81b0ff' }}
-              thumbColor={settings.useCache ? '#007AFF' : '#f4f3f4'}
-            />
-          </View>
-        </View>
+        <SettingRow 
+          title="Use Cache"
+          description={`Cache Size: ${settings.cacheSize}, Batch Size: ${settings.batchSize}`}
+          value={settings.useCache}
+          onValueChange={(value) => updateSetting('useCache', value)}
+        />
         
         <TouchableOpacity 
-          style={styles.settingCard}
+          style={styles.settingCard(themeColors)}
           onPress={() => {
             Alert.alert(
               'Similarity Method',
@@ -150,71 +133,39 @@ export default function SettingsScreen() {
             );
           }}
         >
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>Similarity Method</Text>
-              <Text style={styles.settingValue}>
-                Method: {settings.similarityMethod}
-              </Text>
-            </View>
-            <Text style={styles.tapHint}>Tap to change</Text>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingTitle(themeColors)}>Similarity Method</Text>
+            <Text style={styles.settingDescription(themeColors)}>
+              Current: {settings.similarityMethod}
+            </Text>
           </View>
+          <Text style={styles.arrow(themeColors)}>&gt;</Text>
         </TouchableOpacity>
       </View>
       
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Advanced</Text>
+        <Text style={styles.sectionTitle(themeColors)}>Advanced</Text>
         
-        <View style={styles.settingCard}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>Allow Remote Models</Text>
-              <Text style={styles.settingValue}>
-                Download models from the internet
-              </Text>
-            </View>
-            <Switch
-              value={settings.allowRemoteModels}
-              onValueChange={handleRemoteModelsToggle}
-              trackColor={{ false: '#767577', true: '#81b0ff' }}
-              thumbColor={settings.allowRemoteModels ? '#007AFF' : '#f4f3f4'}
-            />
-          </View>
-        </View>
+        <SettingRow 
+          title="Allow Remote Models"
+          description="Download models from the internet"
+          value={settings.allowRemoteModels}
+          onValueChange={(value) => updateSetting('allowRemoteModels', value)}
+        />
         
-        <View style={styles.settingCard}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>Allow Local Models</Text>
-              <Text style={styles.settingValue}>
-                Use locally stored models
-              </Text>
-            </View>
-            <Switch
-              value={settings.allowLocalModels}
-              onValueChange={handleLocalModelsToggle}
-              trackColor={{ false: '#767577', true: '#81b0ff' }}
-              thumbColor={settings.allowLocalModels ? '#007AFF' : '#f4f3f4'}
-            />
-          </View>
-        </View>
+        <SettingRow 
+          title="Allow Local Models"
+          description="Use locally stored models"
+          value={settings.allowLocalModels}
+          onValueChange={(value) => updateSetting('allowLocalModels', value)}
+        />
         
-        <View style={styles.settingCard}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>Use Browser Cache</Text>
-              <Text style={styles.settingValue}>
-                Cache models in browser storage
-              </Text>
-            </View>
-            <Switch
-              value={settings.useBrowserCache}
-              onValueChange={handleBrowserCacheToggle}
-              trackColor={{ false: '#767577', true: '#81b0ff' }}
-              thumbColor={settings.useBrowserCache ? '#007AFF' : '#f4f3f4'}
-            />
-          </View>
-        </View>
+        <SettingRow 
+          title="Use Browser Cache"
+          description="Cache models in browser storage"
+          value={settings.useBrowserCache}
+          onValueChange={(value) => updateSetting('useBrowserCache', value)}
+        />
       </View>
       
       <View style={styles.section}>
@@ -227,81 +178,66 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  container: (themeColors) => ({
     flex: 1,
-    backgroundColor: '#f5f5f5',
-    padding: 16,
+    backgroundColor: themeColors.background,
+  }),
+  contentContainer: {
+    padding: 20,
   },
-  title: {
-    fontSize: 24,
+  title: (themeColors) => ({
+    fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 20,
-    color: '#333',
-  },
+    marginBottom: 25,
+    color: themeColors.text,
+  }),
   section: {
-    marginBottom: 24,
+    marginBottom: 25,
   },
-  sectionTitle: {
+  sectionTitle: (themeColors) => ({
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 12,
-    color: '#333',
-  },
-  settingCard: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  settingRow: {
+    marginBottom: 15,
+    color: themeColors.text,
+    opacity: 0.8,
+  }),
+  settingCard: (themeColors) => ({
+    backgroundColor: themeColors.background,
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 15,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  }),
   settingInfo: {
     flex: 1,
+    paddingRight: 15,
   },
-  settingTitle: {
-    fontSize: 16,
+  settingTitle: (themeColors) => ({
+    fontSize: 17,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  settingDescription: {
+    color: themeColors.text,
+    marginBottom: 5,
+  }),
+  settingDescription: (themeColors) => ({
     fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-  },
-  settingValue: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  tapHint: {
-    fontSize: 12,
-    color: '#007AFF',
-    fontStyle: 'italic',
-  },
-  dangerCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#FF3B30',
-  },
-  dangerText: {
-    color: '#FF3B30',
-  },
+    color: themeColors.text,
+    opacity: 0.6,
+  }),
+  arrow: (themeColors) => ({
+    fontSize: 20,
+    color: themeColors.icon,
+  }),
   resetButton: {
     backgroundColor: '#FF3B30',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    borderRadius: 15,
+    paddingVertical: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
+    marginTop: 10,
   },
   resetButtonText: {
     color: 'white',

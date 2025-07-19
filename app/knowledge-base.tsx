@@ -6,9 +6,12 @@ import {
     RefreshControl,
     StyleSheet,
     Text,
-    View
+    View,
+    TouchableOpacity
 } from 'react-native';
 import { SampleDocumentService } from '../src/services/sampleDocuments';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { Colors } from '@/constants/Colors';
 
 interface Document {
   id: string;
@@ -22,6 +25,8 @@ export default function KnowledgeBaseScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState({ documents: 0, chunks: 0 });
   const router = useRouter();
+  const colorScheme = useColorScheme();
+  const themeColors = Colors[colorScheme ?? 'light'];
 
   useEffect(() => {
     loadDocuments();
@@ -69,46 +74,46 @@ export default function KnowledgeBaseScreen() {
   };
 
   const renderDocument = ({ item }: { item: Document }) => (
-    <View style={styles.documentItem}>
+    <View style={styles.documentItem(themeColors)}>
       <View style={styles.documentHeader}>
-        <Text style={styles.documentTitle}>{item.title}</Text>
+        <Text style={styles.documentTitle(themeColors)}>{item.title}</Text>
         <View style={[styles.typeBadge, { backgroundColor: item.type === 'markdown' ? '#007AFF' : '#34C759' }]}>
           <Text style={styles.typeText}>{item.type.toUpperCase()}</Text>
         </View>
       </View>
-      <Text style={styles.documentDate}>Added: {formatDate(item.createdAt)}</Text>
-      <Text style={styles.documentId}>ID: {item.id}</Text>
+      <Text style={styles.documentDate(themeColors)}>Added: {formatDate(item.createdAt)}</Text>
+      <Text style={styles.documentId(themeColors)}>ID: {item.id}</Text>
     </View>
   );
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Text style={styles.emptyStateTitle}>No Documents Found</Text>
-      <Text style={styles.emptyStateSubtitle}>
+      <Text style={styles.emptyStateTitle(themeColors)}>No Documents Found</Text>
+      <Text style={styles.emptyStateSubtitle(themeColors)}>
         Documents will appear here once they are added to the knowledge base.
       </Text>
     </View>
   );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container(themeColors)}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Knowledge Base</Text>
         <Text style={styles.headerSubtitle}>Document Management</Text>
       </View>
 
-      <View style={styles.statsContainer}>
+      <View style={styles.statsContainer(themeColors)}>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{stats.documents}</Text>
-          <Text style={styles.statLabel}>Documents</Text>
+          <Text style={styles.statNumber(themeColors)}>{stats.documents}</Text>
+          <Text style={styles.statLabel(themeColors)}>Documents</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{stats.chunks}</Text>
-          <Text style={styles.statLabel}>Chunks</Text>
+          <Text style={styles.statNumber(themeColors)}>{stats.chunks}</Text>
+          <Text style={styles.statLabel(themeColors)}>Chunks</Text>
         </View>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>✓</Text>
-          <Text style={styles.statLabel}>Model</Text>
+          <Text style={styles.statNumber(themeColors)}>✓</Text>
+          <Text style={styles.statLabel(themeColors)}>Model</Text>
         </View>
       </View>
 
@@ -118,111 +123,112 @@ export default function KnowledgeBaseScreen() {
         renderItem={renderDocument}
         style={styles.documentsList}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[themeColors.tint]} tintColor={themeColors.tint} />
         }
         ListEmptyComponent={renderEmptyState}
-        contentContainerStyle={documents.length === 0 ? styles.emptyListContainer : undefined}
+        contentContainerStyle={documents.length === 0 ? styles.emptyListContainer : { paddingBottom: 20 }}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  container: (themeColors) => ({
     flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
+    backgroundColor: themeColors.background,
+  }),
   header: {
     backgroundColor: '#007AFF',
     padding: 20,
     paddingTop: 50,
     alignItems: 'center',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#fff',
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#fff',
-    opacity: 0.8,
+    color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 2,
   },
-  statsContainer: {
+  statsContainer: (themeColors) => ({
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    margin: 10,
-    borderRadius: 10,
-    padding: 15,
+    backgroundColor: themeColors.background,
+    margin: 15,
+    borderRadius: 15,
+    padding: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
+    shadowRadius: 5,
+    elevation: 3,
+  }),
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
-  statNumber: {
-    fontSize: 24,
+  statNumber: (themeColors) => ({
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#007AFF',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
-  },
+    color: themeColors.tint,
+  }),
+  statLabel: (themeColors) => ({
+    fontSize: 13,
+    color: themeColors.text,
+    opacity: 0.7,
+    marginTop: 4,
+  }),
   documentsList: {
     flex: 1,
-    padding: 10,
+    paddingHorizontal: 15,
   },
-  documentItem: {
-    backgroundColor: '#fff',
-    marginBottom: 10,
-    borderRadius: 10,
-    padding: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
+  documentItem: (themeColors) => ({
+    backgroundColor: themeColors.background,
+    marginBottom: 12,
+    borderRadius: 15,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+  }),
   documentHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  documentTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#000',
+  documentTitle: (themeColors) => ({
+    fontSize: 17,
+    fontWeight: '600',
+    color: themeColors.text,
     flex: 1,
-  },
+  }),
   typeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
     marginLeft: 10,
   },
   typeText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: 'bold',
     color: '#fff',
   },
-  documentDate: {
+  documentDate: (themeColors) => ({
     fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  documentId: {
+    color: themeColors.text,
+    opacity: 0.6,
+    marginBottom: 6,
+  }),
+  documentId: (themeColors) => ({
     fontSize: 12,
-    color: '#999',
+    color: themeColors.text,
+    opacity: 0.4,
     fontFamily: 'monospace',
-  },
+  }),
   emptyListContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -231,17 +237,18 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     padding: 40,
+    opacity: 0.7,
   },
-  emptyStateTitle: {
+  emptyStateTitle: (themeColors) => ({
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#666',
+    color: themeColors.text,
     marginBottom: 10,
-  },
-  emptyStateSubtitle: {
+  }),
+  emptyStateSubtitle: (themeColors) => ({
     fontSize: 14,
-    color: '#999',
+    color: themeColors.text,
     textAlign: 'center',
     lineHeight: 20,
-  },
+  }),
 }); 
