@@ -16,7 +16,6 @@ import {
     View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { simpleAppTest } from '../src/services/simpleAppTest';
 import { BackgroundInitializationService, InitializationState } from '../src/services/backgroundInitializationService';
 
 interface Message {
@@ -275,9 +274,9 @@ export default function ChatScreen() {
         <View style={[styles.inputContainer, { backgroundColor: themeColors.background }]}>
           <TextInput
             style={[styles.input, { 
-              backgroundColor: themeColors.card,
+              backgroundColor: themeColors.background,
               color: themeColors.text,
-              borderColor: themeColors.border
+              borderColor: themeColors.tabIconDefault
             }]}
             value={inputText}
             onChangeText={setInputText}
@@ -370,6 +369,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 3,
     fontWeight: '500',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  networkButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+  },
+  networkText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   settingsButton: {
     paddingHorizontal: 18,
