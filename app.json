@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "LEAI Platform",
-    "slug": "leai-platform",
+    "name": "RUFI Platform",
+    "slug": "rufi-platform",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "leai",
+    "scheme": "rufi",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "assets": [
@@ -21,7 +21,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#007AFF"
       },
-      "package": "com.anonymous.leaiplatform"
+      "package": "com.anonymous.rufiplatform"
     },
     "web": {
       "bundler": "metro",

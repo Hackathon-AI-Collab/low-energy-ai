@@ -88,8 +88,26 @@ export class VectorRAG {
         await this.initialize();
       }
 
+      // Quick keyword search test for debugging
+      if (userQuery.toLowerCase().includes('water')) {
+        console.log('🚰 Debug: Testing keyword search for water content...');
+        try {
+          const stats = await this.vectorStorage.getDocumentStats();
+          console.log(`📊 Database contains: ${stats.documents} documents, ${stats.chunksWithEmbeddings} chunks with embeddings`);
+          
+          // Show some sample chunks to verify content quality
+          const sampleChunks = await this.vectorStorage.getSampleChunks(3);
+          console.log(`📝 Sample chunks in database:`);
+          sampleChunks.forEach((chunk, i) => {
+            console.log(`   ${i+1}. ${chunk.document_id}: "${chunk.content}"`);
+          });
+        } catch (error) {
+          console.log('⚠️ Could not get database stats:', error);
+        }
+      }
+
       // Generate embedding for the user query
-      console.log('🧠 VectorRAG: Generating query embedding...');
+      console.log(`🧠 VectorRAG: Generating query embedding for: "${userQuery}"`);
       const queryEmbedding = await this.embeddingService.generateEmbedding(userQuery);
       
       if (!queryEmbedding || queryEmbedding.length === 0) {
@@ -103,7 +121,7 @@ export class VectorRAG {
       const searchResults = await this.vectorStorage.searchSimilarChunks(
         queryEmbedding,
         10, // limit
-        0.8 // similarity threshold
+        0.9 // distance threshold (more permissive to include water content)
       );
 
       console.log(`📊 VectorRAG: Found ${searchResults.length} relevant chunks`);
@@ -114,7 +132,8 @@ export class VectorRAG {
 
       // Log search results for debugging
       searchResults.forEach((result, index) => {
-        console.log(`📄 VectorRAG: Chunk ${index + 1} (distance: ${result.distance.toFixed(3)}): "${result.chunk.content.substring(0, 100)}..."`);
+        const similarity = (1 - result.distance).toFixed(3);
+        console.log(`📄 VectorRAG: Chunk ${index + 1} (distance: ${result.distance.toFixed(3)}, similarity: ${similarity}): "${result.chunk.content.substring(0, 100)}..."`);
       });
 
       // Build context from search results

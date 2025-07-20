@@ -97,11 +97,20 @@ export class SQLiteVectorStorage {
       } catch (e) {
         console.log('⚠️ vec0 virtual table not available, trying basic functions:', e.message);
         
-        // Try basic distance function
+        // Try basic distance function with actual test
+        const testVec = new Float32Array([1, 0, 0, 0]);
+        const testBlob = new Uint8Array(testVec.buffer);
+        
         await this.db!.execute(`
-          SELECT 1 as test
-        `);
-        console.log('✅ sqlite-vec extension loaded, using BLOB storage approach');
+          INSERT INTO test_vectors (vec) VALUES (?)
+        `, [testBlob]);
+        
+        const distanceTest = await this.db!.execute(`
+          SELECT vec_distance_cosine(vec, ?) as distance FROM test_vectors
+        `, [testBlob]);
+        
+        console.log(`✅ sqlite-vec extension loaded, distance test result: ${distanceTest.rows[0]?.distance}`);
+        console.log('✅ Using BLOB storage approach with vec_distance_cosine function');
       }
       
       // Clean up test table
@@ -260,19 +269,35 @@ export class SQLiteVectorStorage {
   async searchSimilarChunks(
     queryEmbedding: number[], 
     limit: number = 10, 
-    threshold: number = 0.8
+    distanceThreshold: number = 0.7
   ): Promise<VectorSearchResult[]> {
     if (!this.isInitialized) {
       await this.initialize();
     }
 
     try {
-      console.log(`🔍 SQLiteVectorStorage: Searching for similar chunks (limit: ${limit}, threshold: ${threshold})`);
+      console.log(`🔍 SQLiteVectorStorage: Searching for similar chunks (limit: ${limit}, distance threshold: ${distanceThreshold})`);
 
       // Convert query embedding to binary format for sqlite-vec
       const queryFloat32Array = new Float32Array(queryEmbedding);
       const queryEmbeddingBlob = new Uint8Array(queryFloat32Array.buffer);
+      
+      // Test if vec_distance_cosine function is available
+      try {
+        const testResult = await this.db!.execute(`SELECT vec_distance_cosine(?, ?) as test`, [queryEmbeddingBlob, queryEmbeddingBlob]);
+        const testValue = testResult.rows[0]?.test;
+        console.log(`✅ vec_distance_cosine test successful: ${testValue} (should be 0.0 for identical vectors)`);
+        
+        if (testValue === undefined || testValue === null) {
+          console.warn(`⚠️ vec_distance_cosine returned undefined - this may indicate function issues`);
+        }
+      } catch (funcError) {
+        console.error(`❌ vec_distance_cosine function test failed:`, funcError);
+        console.log('🔧 This suggests sqlite-vec extension functions are not properly loaded');
+        throw funcError;
+      }
 
+      console.log(`🔍 Executing search query with threshold ${distanceThreshold}`);
       const results = await this.db!.execute(`
         SELECT 
           id,
@@ -289,7 +314,12 @@ export class SQLiteVectorStorage {
           AND vec_distance_cosine(embedding, ?) <= ?
         ORDER BY distance ASC
         LIMIT ?
-      `, [queryEmbeddingBlob, queryEmbeddingBlob, threshold, limit]);
+      `, [queryEmbeddingBlob, queryEmbeddingBlob, distanceThreshold, limit]);
+      
+      console.log(`🔍 Query returned ${results.rows.length} raw results`);
+      if (results.rows.length > 0) {
+        console.log(`🔍 First result distance: ${results.rows[0].distance}`);
+      }
 
       const searchResults: VectorSearchResult[] = results.rows.map((row: any) => ({
         chunk: {
@@ -304,12 +334,64 @@ export class SQLiteVectorStorage {
         distance: row.distance
       }));
 
-      console.log(`✅ SQLiteVectorStorage: Found ${searchResults.length} similar chunks`);
+      console.log(`✅ SQLiteVectorStorage: Found ${searchResults.length} chunks with distance <= ${distanceThreshold}`);
+      
+      // Debug: Always check water content distances for comparison
+      try {
+        const waterContentCheck = await this.db!.execute(`
+          SELECT 
+            id,
+            document_id, 
+            content, 
+            vec_distance_cosine(embedding, ?) as distance
+          FROM document_chunks 
+          WHERE embedding IS NOT NULL 
+            AND (LOWER(content) LIKE '%water%' OR LOWER(content) LIKE '%hydrat%' OR LOWER(content) LIKE '%fluid%' OR LOWER(content) LIKE '%drink%')
+          ORDER BY distance ASC
+          LIMIT 3
+        `, [queryEmbeddingBlob]);
+        
+        if (waterContentCheck.rows.length > 0) {
+          console.log(`🚰 Water content comparison (current threshold: ${distanceThreshold}):`);
+          waterContentCheck.rows.forEach((row: any, i: number) => {
+            const included = row.distance <= distanceThreshold ? '✅ INCLUDED' : '❌ EXCLUDED';
+            console.log(`   ${i+1}. Distance: ${row.distance.toFixed(3)} ${included} - ${row.document_id}: "${row.content.substring(0, 60)}..."`);
+          });
+        }
+      } catch (debugError) {
+        console.log('🔍 Water content debug check failed:', debugError);
+      }
+      
       return searchResults;
 
     } catch (error) {
       console.error('❌ SQLiteVectorStorage: Search failed:', error);
       throw error;
+    }
+  }
+
+  async getSampleChunks(limit: number = 5): Promise<any[]> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    try {
+      const results = await this.db!.execute(`
+        SELECT document_id, content, chunk_index
+        FROM document_chunks 
+        WHERE embedding IS NOT NULL
+        ORDER BY RANDOM()
+        LIMIT ?
+      `, [limit]);
+
+      return results.rows.map((row: any) => ({
+        document_id: row.document_id,
+        content: row.content.substring(0, 200) + (row.content.length > 200 ? '...' : ''),
+        chunk_index: row.chunk_index
+      }));
+    } catch (error) {
+      console.error('❌ SQLiteVectorStorage: Failed to get sample chunks:', error);
+      return [];
     }
   }
 

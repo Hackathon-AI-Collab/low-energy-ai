@@ -46,7 +46,7 @@ export default function ChatScreen() {
 
   const initializeApp = async () => {
     try {
-      console.log('Initializing LEAI app (lightweight startup)...');
+      console.log('Initializing RUFI app (lightweight startup)...');
       
       // Quick startup - no heavy operations
       setIsInitialized(true);
@@ -56,7 +56,7 @@ export default function ChatScreen() {
       // Add welcome message immediately
       const welcomeMessage: Message = {
         id: 'welcome',
-        text: 'Hello! I\'m LEAI, your low-energy AI assistant. I\'m initializing in the background - you can start chatting and I\'ll be ready shortly!',
+        text: 'Hello! I\'m RUFI, your intelligent emergency response assistant. I\'m initializing in the background - you can start chatting and I\'ll be ready shortly!',
         isUser: false,
         timestamp: new Date()
       };
@@ -68,7 +68,7 @@ export default function ChatScreen() {
       }, 1000);
       
     } catch (error) {
-      console.error('❌ Failed to quick initialize LEAI app:', error);
+      console.error('❌ Failed to quick initialize RUFI app:', error);
       const errorMessage: Message = {
         id: 'error',
         text: 'Sorry, I encountered an error during initialization. Limited functionality available.',
@@ -117,7 +117,7 @@ export default function ChatScreen() {
       // Update welcome message
       const readyMessage: Message = {
         id: 'ready',
-        text: '✅ I\'m now fully initialized! I can help with medical guidelines, search and rescue procedures, and technical information using advanced semantic search.',
+        text: '✅ I\'m now fully initialized! I can help with emergency response protocols, medical guidelines, search and rescue procedures, and technical information using advanced AI-powered search.',
         isUser: false,
         timestamp: new Date()
       };
@@ -246,7 +246,7 @@ export default function ChatScreen() {
               style={styles.headerIcon}
             />
             <View style={styles.headerText}>
-              <Text style={[styles.headerTitle, { color: themeColors.text }]}>LEAI Assistant</Text>
+              <Text style={[styles.headerTitle, { color: themeColors.text }]}>RUFI Assistant</Text>
               <Text style={[styles.headerSubtitle, { color: themeColors.tabIconDefault }]}>
                 {initProgress < 100 ? `${initStatus} (${initProgress}%)` : 'Ready'}
               </Text>
@@ -281,7 +281,7 @@ export default function ChatScreen() {
             }]}
             value={inputText}
             onChangeText={setInputText}
-            placeholder="Ask me anything..."
+            placeholder="Ask about emergency procedures, medical protocols..."
             placeholderTextColor={themeColors.tabIconDefault}
             multiline
             maxLength={1000}
@@ -318,25 +318,34 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 32,
   },
   loadingText: {
-    marginTop: 10,
-    fontSize: 16,
+    marginTop: 20,
+    fontSize: 18,
     textAlign: 'center',
+    fontWeight: '500',
+    lineHeight: 24,
   },
   progressText: {
-    marginTop: 5,
-    fontSize: 14,
-    fontWeight: 'bold',
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   header: {
-    padding: 16,
+    padding: 20,
+    paddingTop: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   headerContent: {
     flexDirection: 'row',
@@ -344,87 +353,114 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginRight: 16,
   },
   headerText: {
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   headerSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: 13,
+    marginTop: 3,
+    fontWeight: '500',
   },
   settingsButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
   },
   settingsText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
   },
   messagesList: {
     flex: 1,
   },
   messagesContent: {
-    padding: 16,
+    padding: 20,
+    paddingBottom: 8,
   },
   messageContainer: {
-    marginVertical: 4,
-    padding: 12,
-    borderRadius: 12,
+    marginVertical: 6,
+    padding: 16,
+    borderRadius: 18,
     maxWidth: '85%',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   userMessage: {
     backgroundColor: '#007AFF',
     alignSelf: 'flex-end',
+    marginLeft: '15%',
   },
   assistantMessage: {
     backgroundColor: '#F0F0F0',
     alignSelf: 'flex-start',
+    marginRight: '15%',
   },
   messageText: {
     fontSize: 16,
-    lineHeight: 22,
+    lineHeight: 24,
+    fontWeight: '400',
   },
   timestamp: {
-    fontSize: 11,
-    marginTop: 4,
+    fontSize: 12,
+    marginTop: 6,
+    fontWeight: '500',
   },
   inputContainer: {
     flexDirection: 'row',
-    padding: 16,
+    padding: 20,
+    paddingTop: 16,
     alignItems: 'flex-end',
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   input: {
     flex: 1,
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginRight: 12,
-    maxHeight: 100,
+    borderWidth: 1.5,
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    marginRight: 14,
+    maxHeight: 120,
     fontSize: 16,
+    fontWeight: '400',
+    lineHeight: 20,
   },
   sendButton: {
-    borderRadius: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    borderRadius: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    minWidth: 60,
+    minWidth: 70,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   sendButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 });
