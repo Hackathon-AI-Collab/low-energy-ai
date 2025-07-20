@@ -27,9 +27,14 @@ export class DocumentLoader {
 
   // Initialize and load all documents on app startup
   async initialize(): Promise<{ success: number; failed: number; errors: string[] }> {
+    console.log('DocumentLoader: ==========================================');
+    console.log('DocumentLoader: STARTING DOCUMENT LOADER INITIALIZATION');
+    console.log('DocumentLoader: ==========================================');
+    
     if (this.isInitialized) {
-      console.log('DocumentLoader: Already initialized');
-      return { success: 0, failed: 0, errors: [] };
+      console.log('DocumentLoader: Already initialized, forcing reinitialization');
+      this.isInitialized = false;
+      this.documentsLoaded = false;
     }
 
     console.log('DocumentLoader: Initializing document loader...');
@@ -48,13 +53,16 @@ export class DocumentLoader {
       await vectorStore.initialize();
       await storageService.initialize();
 
-      // Check if documents are already loaded
-      const existingDocs = await vectorStore.getAllDocuments();
-      if (existingDocs.length > 0) {
-        console.log(`DocumentLoader: Found ${existingDocs.length} existing documents, skipping load`);
-        this.documentsLoaded = true;
-        this.isInitialized = true;
-        return { success: existingDocs.length, failed: 0, errors: [] };
+      // ALWAYS CLEAR AND RELOAD - NO EXCEPTIONS
+      console.log('DocumentLoader: 🔥 AGGRESSIVE RELOAD - ALWAYS clearing all documents');
+      console.log('DocumentLoader: This ensures fresh content with proper MARCH algorithm descriptions');
+      
+      try {
+        await vectorStore.clearAll();
+        console.log('DocumentLoader: ✅ Successfully cleared all documents');
+      } catch (clearError) {
+        console.error('DocumentLoader: ❌ Failed to clear documents:', clearError);
+        // Continue anyway
       }
 
       // Load all documents from assets/documents directory
@@ -67,11 +75,21 @@ export class DocumentLoader {
       const loadPromises = documents.map(async (doc) => {
         try {
           console.log(`DocumentLoader: Loading document: ${doc.filename}`);
+          console.log(`DocumentLoader: Content preview for ${doc.filename}: ${doc.content.substring(0, 100)}...`);
           
           // Add document to vector store
           await vectorStore.addDocument(doc.filename, doc.title, doc.content, 'markdown');
           
           console.log(`DocumentLoader: Successfully loaded: ${doc.title}`);
+          
+          // Special logging for TCCC documents
+          if (doc.filename.includes('tccc')) {
+            console.log(`DocumentLoader: ✅ TCCC document loaded: ${doc.title}`);
+            console.log(`DocumentLoader: 📄 TCCC content length: ${doc.content.length} characters`);
+            console.log(`DocumentLoader: 🔍 TCCC contains MARCH: ${doc.content.toLowerCase().includes('march')}`);
+            console.log(`DocumentLoader: 🔍 TCCC contains algorithm: ${doc.content.toLowerCase().includes('algorithm')}`);
+          }
+          
           return { success: true, doc: doc.title };
           
         } catch (error) {
@@ -233,22 +251,29 @@ This document serves as a comprehensive guide for establishing and maintaining e
 
 Comprehensive military medical guidelines for tactical combat casualty care.
 
-### MARCH Algorithm
-- **M** - Massive Hemorrhage: Control bleeding using tourniquets, hemostatic dressings
-- **A** - Airway: Ensure airway patency, consider advanced airway if needed
-- **R** - Respiration: Address breathing issues, chest decompression if indicated
-- **C** - Circulation: Assess and treat shock, IV access, fluid resuscitation
-- **H** - Hypothermia/Head injury: Prevent hypothermia, assess neurological status
+### What is the MARCH Algorithm?
+
+The MARCH algorithm is a systematic approach to trauma care used in tactical combat casualty care. It provides a structured method for assessing and treating casualties in combat situations.
+
+### MARCH Algorithm Components
+- **M** - Massive Hemorrhage: Control bleeding using tourniquets, hemostatic dressings, and pressure
+- **A** - Airway: Ensure airway patency, consider advanced airway if needed, maintain cervical spine protection
+- **R** - Respiration: Address breathing issues, chest decompression if indicated, manage tension pneumothorax
+- **C** - Circulation: Assess and treat shock, establish IV access, fluid resuscitation, monitor vital signs
+- **H** - Hypothermia/Head injury: Prevent hypothermia, assess neurological status, protect from environmental factors
+
+### MARCH Algorithm Application
+The MARCH algorithm is applied sequentially, ensuring that life-threatening conditions are addressed in order of priority. This systematic approach helps medical personnel provide effective care under stressful combat conditions.
 
 ### Tactical Considerations
 - Care Under Fire: Return fire, move to cover, basic hemorrhage control
-- Tactical Field Care: Complete assessment and treatment
+- Tactical Field Care: Complete assessment and treatment using MARCH algorithm
 - Tactical Evacuation Care: Advanced interventions during transport
 
 ### Military Medical Protocols
-- Combat casualty care principles
-- Tactical medicine procedures
-- Military-specific interventions
+- Combat casualty care principles based on MARCH algorithm
+- Tactical medicine procedures and protocols
+- Military-specific interventions and guidelines
 - Evacuation and transport protocols`;
     }
     
@@ -306,6 +331,52 @@ International coordination guidelines for search and rescue operations.
 - Resource mobilization
 - Communication networks
 - Quality standards`;
+    }
+    
+    // Special handling for TCCC Quick Reference
+    if (filename.includes('tccc_quick_ref')) {
+      return `# TCCC Quick Reference
+
+## Tactical Combat Casualty Care Quick Reference
+
+Quick reference guide for tactical combat casualty care using the MARCH algorithm.
+
+### MARCH Algorithm Quick Reference
+
+**M - Massive Hemorrhage**
+- Apply tourniquet for extremity bleeding
+- Use hemostatic dressings for junctional bleeding
+- Apply direct pressure for other bleeding
+
+**A - Airway**
+- Check airway patency
+- Consider nasopharyngeal airway
+- Prepare for advanced airway if needed
+
+**R - Respiration**
+- Check breathing and chest movement
+- Perform needle decompression for tension pneumothorax
+- Monitor respiratory rate and effort
+
+**C - Circulation**
+- Assess pulse and capillary refill
+- Establish IV access if needed
+- Administer fluids for shock
+- Monitor blood pressure and heart rate
+
+**H - Hypothermia/Head injury**
+- Prevent hypothermia with blankets
+- Assess neurological status
+- Protect from environmental factors
+
+### MARCH Algorithm Steps
+1. Control massive hemorrhage first
+2. Ensure airway patency
+3. Address breathing problems
+4. Treat circulation issues
+5. Prevent hypothermia and assess head injury
+
+This quick reference provides essential information for implementing the MARCH algorithm in tactical situations.`;
     }
     
     // Default content for other files
@@ -392,5 +463,70 @@ This document provides essential information for emergency responders and medica
       initialized: this.isInitialized,
       documentsLoaded: this.documentsLoaded
     };
+  }
+
+  // Force reload all documents (for testing)
+  async forceReload(): Promise<{ success: number; failed: number; errors: string[] }> {
+    console.log('DocumentLoader: FORCE RELOAD - Manually clearing and reloading all documents');
+    
+    // Reset state
+    this.isInitialized = false;
+    this.documentsLoaded = false;
+    
+    // Clear existing data
+    const vectorStore = new VoyVectorStore();
+    await vectorStore.initialize();
+    await vectorStore.clearAll();
+    
+    // Reinitialize
+    return await this.initialize();
+  }
+
+  // Test method to verify TCCC documents are loaded properly
+  async testTCCCDocuments(): Promise<{ loaded: boolean; tcccDocs: any[]; marchContent: boolean }> {
+    try {
+      const vectorStore = new VoyVectorStore();
+      await vectorStore.initialize();
+      
+      const allDocs = await vectorStore.getAllDocuments();
+      const tcccDocs = allDocs.filter(doc => 
+        doc.title.toLowerCase().includes('tccc') || 
+        doc.title.toLowerCase().includes('tactical combat casualty care')
+      );
+      
+      console.log(`DocumentLoader: TEST - Found ${tcccDocs.length} TCCC documents`);
+      
+      let marchContent = false;
+      if (tcccDocs.length > 0) {
+        const tcccChunks = tcccDocs.flatMap(doc => 
+          vectorStore.getDocumentChunks(doc.id)
+        );
+        
+        marchContent = tcccChunks.some(chunk => 
+          chunk.content.toLowerCase().includes('march algorithm') ||
+          chunk.content.toLowerCase().includes('what is the march algorithm')
+        );
+        
+        console.log(`DocumentLoader: TEST - TCCC documents contain MARCH content: ${marchContent}`);
+        
+        // Log content preview for debugging
+        for (const doc of tcccDocs) {
+          const chunks = vectorStore.getDocumentChunks(doc.id);
+          if (chunks.length > 0) {
+            console.log(`DocumentLoader: TEST - ${doc.title} content preview: ${chunks[0].content.substring(0, 200)}...`);
+          }
+        }
+      }
+      
+      return {
+        loaded: tcccDocs.length > 0,
+        tcccDocs: tcccDocs,
+        marchContent: marchContent
+      };
+      
+    } catch (error) {
+      console.error('DocumentLoader: TEST - Error testing TCCC documents:', error);
+      return { loaded: false, tcccDocs: [], marchContent: false };
+    }
   }
 } 

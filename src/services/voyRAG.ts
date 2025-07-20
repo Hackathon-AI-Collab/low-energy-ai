@@ -122,7 +122,7 @@ export class VoyRAG {
       }
       
       // Prepare context from relevant chunks
-      const context = this.prepareContextFromChunks(relevantChunks);
+      const context = await this.prepareContextFromChunks(relevantChunks);
       const documentTitles = await this.getDocumentTitles(relevantChunks);
       const similarityScores = relevantChunks.map(chunk => 
         chunk.metadata.similarityScore || 0
@@ -190,10 +190,15 @@ export class VoyRAG {
     }
   }
 
-  private prepareContextFromChunks(chunks: DocumentChunk[]): string {
-    return chunks.map(chunk => 
-      `Document: ${this.getDocumentTitle(chunk.documentId)}\nContent: ${chunk.content}`
-    ).join('\n\n');
+  private async prepareContextFromChunks(chunks: DocumentChunk[]): Promise<string> {
+    const contextParts = [];
+    
+    for (const chunk of chunks) {
+      const title = await this.getDocumentTitle(chunk.documentId);
+      contextParts.push(`Document: ${title}\nContent: ${chunk.content}`);
+    }
+    
+    return contextParts.join('\n\n');
   }
 
   private async getDocumentTitles(chunks: DocumentChunk[]): Promise<string[]> {

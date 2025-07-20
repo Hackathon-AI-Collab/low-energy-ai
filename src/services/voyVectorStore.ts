@@ -234,69 +234,77 @@ export class VoyVectorStore {
       
       console.log(`📊 Voy Vector Store: Found ${chunksWithEmbeddings.length} chunks with embeddings out of ${this.chunks.size} total chunks`);
       
-      if (chunksWithEmbeddings.length > 0) {
-        console.log('✅ Voy Vector Store: Using embedding-based search');
+      // If we don't have embeddings, try to generate them
+      if (chunksWithEmbeddings.length === 0) {
+        console.log('⚠️ Voy Vector Store: No embeddings found, attempting to generate embeddings...');
+        const allChunks = Array.from(this.chunks.values());
+        await this.generateChunkEmbeddings(allChunks);
         
-        // Generate query embedding
-        const sentenceTransformer = this.getSentenceTransformer();
-        if (sentenceTransformer) {
-          console.log('🔍 Voy Vector Store: Generating query embedding...');
-          const queryEmbedding = await sentenceTransformer.generateEmbedding(query);
-          console.log(`📏 Query embedding dimension: ${queryEmbedding.length}`);
-          
-          // Check if we have any chunks with compatible dimensions
-          const compatibleChunks = chunksWithEmbeddings.filter(chunk => 
-            chunk.embedding.length === queryEmbedding.length
-          );
-          
-          console.log(`📊 Voy Vector Store: Found ${compatibleChunks.length} chunks with compatible dimensions out of ${chunksWithEmbeddings.length} total chunks with embeddings`);
-          
-          if (compatibleChunks.length > 0) {
-            // Search using embeddings
-            const results = await this.searchSimilarChunks(queryEmbedding, limit);
-            console.log(`✅ Voy Vector Store: Found ${results.length} results using embedding search`);
-            return results;
-          } else {
-            console.warn('⚠️ Voy Vector Store: No chunks with compatible embedding dimensions found, falling back to text search');
-          }
+        // Re-check embeddings after generation
+        const updatedChunksWithEmbeddings = Array.from(this.chunks.values()).filter(chunk => 
+          chunk.embedding && chunk.embedding.length > 0
+        );
+        console.log(`📊 Voy Vector Store: After generation, found ${updatedChunksWithEmbeddings.length} chunks with embeddings`);
+        
+        if (updatedChunksWithEmbeddings.length > 0) {
+          console.log('✅ Voy Vector Store: Successfully generated embeddings, proceeding with embedding search');
+          chunksWithEmbeddings.length = 0; // Clear the array
+          chunksWithEmbeddings.push(...updatedChunksWithEmbeddings); // Add the new embeddings
         } else {
-          console.warn('⚠️ Voy Vector Store: No sentence transformer available for embedding search');
-        }
-      } else {
-        console.log('⚠️ Voy Vector Store: No embeddings available, using text-based search');
-      }
-      
-      // Text-based search as fallback
-      console.log('🔍 Voy Vector Store: Using text-based search fallback');
-      const queryLower = query.toLowerCase();
-      const results: { chunk: DocumentChunk; score: number }[] = [];
-      
-      for (const chunk of this.chunks.values()) {
-        const contentLower = chunk.content.toLowerCase();
-        let score = 0;
-        
-        // Simple text matching
-        const queryWords = queryLower.split(/\s+/);
-        for (const word of queryWords) {
-          if (contentLower.includes(word)) {
-            score += 1;
-          }
-        }
-        
-        if (score > 0) {
-          results.push({ chunk, score });
+          console.error('❌ Voy Vector Store: Failed to generate embeddings, cannot perform search');
+          return [];
         }
       }
       
-      // Sort by score and return top results
-      results.sort((a, b) => b.score - a.score);
-      const topResults = results.slice(0, limit).map(item => {
-        item.chunk.metadata.similarityScore = item.score / Math.max(...results.map(r => r.score));
-        return item.chunk;
-      });
+      // EMBEDDING-ONLY SEARCH - NO FALLBACK
+      const sentenceTransformer = this.getSentenceTransformer();
+      if (!sentenceTransformer) {
+        console.error('❌ Voy Vector Store: No sentence transformer available, cannot perform embedding search');
+        return [];
+      }
       
-      console.log(`✅ Voy Vector Store: Found ${topResults.length} results using text search`);
-      return topResults;
+      if (chunksWithEmbeddings.length === 0) {
+        console.error('❌ Voy Vector Store: No embeddings available, cannot perform embedding search');
+        return [];
+      }
+      
+      console.log('✅ Voy Vector Store: Using embedding-based search ONLY');
+      
+      try {
+        console.log('🔍 Voy Vector Store: Generating query embedding...');
+        const queryEmbedding = await sentenceTransformer.generateEmbedding(query);
+        console.log(`📏 Query embedding dimension: ${queryEmbedding.length}`);
+        
+        // Check if we have any chunks with compatible dimensions
+        const compatibleChunks = chunksWithEmbeddings.filter(chunk => 
+          chunk.embedding.length === queryEmbedding.length
+        );
+        
+        console.log(`📊 Voy Vector Store: Found ${compatibleChunks.length} chunks with compatible dimensions out of ${chunksWithEmbeddings.length} total chunks with embeddings`);
+        
+        if (compatibleChunks.length === 0) {
+          console.error('❌ Voy Vector Store: No chunks with compatible embedding dimensions found');
+          return [];
+        }
+        
+        // Search using embeddings ONLY
+        const results = await this.searchSimilarChunks(queryEmbedding, limit);
+        console.log(`✅ Voy Vector Store: Found ${results.length} results using embedding search`);
+        
+        // Log the top results for debugging
+        for (let i = 0; i < Math.min(results.length, 3); i++) {
+          const result = results[i];
+          const document = this.documents.get(result.documentId);
+          console.log(`📄 Result ${i + 1}: ${document?.title || result.documentId} (similarity: ${result.metadata.similarityScore?.toFixed(4)})`);
+        }
+        
+        return results;
+        
+      } catch (error) {
+        console.error('❌ Voy Vector Store: Error in embedding search:', error);
+        console.error('❌ Voy Vector Store: No fallback available - returning empty results');
+        return [];
+      }
       
     } catch (error) {
       console.error('❌ Voy Vector Store: Search failed:', error);
@@ -624,18 +632,84 @@ export class VoyVectorStore {
   }
 
   private calculateImportance(content: string): number {
-    const medicalKeywords = ['tccc', 'march', 'tourniquet', 'hemorrhage', 'airway', 'rescue', 'emergency'];
     const lowerContent = content.toLowerCase();
     
-    let score = Math.min(content.length / 1000, 5);
+    // Medical and emergency keywords with weights
+    const keywordWeights: { [key: string]: number } = {
+      // TCCC and MARCH specific keywords (highest weight)
+      'march algorithm': 10,
+      'tccc': 8,
+      'tactical combat casualty care': 8,
+      'massive hemorrhage': 7,
+      'tourniquet': 6,
+      'hemostatic': 6,
+      'airway': 6,
+      'respiration': 6,
+      'circulation': 6,
+      'hypothermia': 6,
+      'head injury': 6,
+      
+      // Medical procedure keywords
+      'algorithm': 5,
+      'protocol': 5,
+      'procedure': 5,
+      'treatment': 5,
+      'assessment': 5,
+      'intervention': 5,
+      
+      // Emergency response keywords
+      'emergency': 4,
+      'trauma': 4,
+      'casualty': 4,
+      'rescue': 4,
+      'incident': 4,
+      'response': 4,
+      
+      // Medical terms
+      'medical': 3,
+      'health': 3,
+      'care': 3,
+      'patient': 3,
+      'clinical': 3,
+      
+      // General importance based on content length and structure
+      'what is': 4,
+      'how to': 4,
+      'steps': 4,
+      'guidelines': 4,
+      'standards': 4
+    };
     
-    for (const keyword of medicalKeywords) {
+    let score = 0;
+    
+    // Calculate base score from content length (normalized)
+    const lengthScore = Math.min(content.length / 200, 3); // Max 3 points for length
+    score += lengthScore;
+    
+    // Calculate keyword score
+    for (const [keyword, weight] of Object.entries(keywordWeights)) {
       if (lowerContent.includes(keyword)) {
-        score += 2;
+        score += weight;
       }
     }
     
-    return Math.min(score, 10);
+    // Bonus for chunks that contain question-answer patterns
+    if (lowerContent.includes('what is') && lowerContent.includes('algorithm')) {
+      score += 5; // High bonus for question-answer about algorithms
+    }
+    
+    // Bonus for chunks that contain structured content (lists, steps)
+    if (lowerContent.includes('-') || lowerContent.includes('1.') || lowerContent.includes('step')) {
+      score += 2;
+    }
+    
+    // Bonus for chunks that contain definitions or explanations
+    if (lowerContent.includes('is a') || lowerContent.includes('means') || lowerContent.includes('refers to')) {
+      score += 2;
+    }
+    
+    // Cap the score at 20
+    return Math.min(score, 20);
   }
 
   private chunkContent(content: string, documentId: string): DocumentChunk[] {
@@ -644,62 +718,29 @@ export class VoyVectorStore {
     console.log(`📄 Content length: ${content.length} characters`);
     
     const chunks: DocumentChunk[] = [];
-    const sentences = this.splitIntoSentences(content);
     
-    console.log(`🔤 Split into ${sentences.length} sentences`);
+    // Improved chunking strategy
+    const semanticChunks = this.createSemanticChunks(content);
     
-    let chunkIndex = 0;
-    let currentChunk = '';
-    let startPosition = 0;
+    console.log(`🔤 Created ${semanticChunks.length} semantic chunks`);
     
-    for (let i = 0; i < sentences.length; i++) {
-      const sentence = sentences[i];
-      const newChunk = currentChunk + (currentChunk ? ' ' : '') + sentence;
+    for (let i = 0; i < semanticChunks.length; i++) {
+      const chunkContent = semanticChunks[i];
+      const startPosition = content.indexOf(chunkContent);
       
-      // If adding this sentence would make the chunk too long, save current chunk
-      if (newChunk.length > 1000 && currentChunk.length > 0) {
-        console.log(`📄 Creating chunk ${chunkIndex} (${currentChunk.length} chars)`);
-        
-        const chunk: DocumentChunk = {
-          id: `${documentId}_chunk_${chunkIndex}`,
-          documentId,
-          content: currentChunk,
-          embedding: [], // Will be generated later
-          metadata: {
-            chunkIndex,
-            startPosition,
-            endPosition: startPosition + currentChunk.length,
-            importance: this.calculateImportance(currentChunk)
-          },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        };
-        
-        chunks.push(chunk);
-        
-        // Start new chunk
-        currentChunk = sentence;
-        startPosition = startPosition + currentChunk.length + 1;
-        chunkIndex++;
-      } else {
-        currentChunk = newChunk;
-      }
-    }
-    
-    // Add the last chunk if it has content
-    if (currentChunk.length > 0) {
-      console.log(`📄 Creating final chunk ${chunkIndex} (${currentChunk.length} chars)`);
+      console.log(`📄 Creating chunk ${i} (${chunkContent.length} chars)`);
+      console.log(`📄 Chunk preview: "${chunkContent.substring(0, 100)}${chunkContent.length > 100 ? '...' : ''}"`);
       
       const chunk: DocumentChunk = {
-        id: `${documentId}_chunk_${chunkIndex}`,
+        id: `${documentId}_chunk_${i}`,
         documentId,
-        content: currentChunk,
+        content: chunkContent,
         embedding: [], // Will be generated later
         metadata: {
-          chunkIndex,
+          chunkIndex: i,
           startPosition,
-          endPosition: startPosition + currentChunk.length,
-          importance: this.calculateImportance(currentChunk)
+          endPosition: startPosition + chunkContent.length,
+          importance: this.calculateImportance(chunkContent)
         },
         createdAt: new Date(),
         updatedAt: new Date()
@@ -708,13 +749,160 @@ export class VoyVectorStore {
       chunks.push(chunk);
     }
     
-    console.log(`✅ Voy Vector Store: Created ${chunks.length} chunks`);
+    console.log(`✅ Voy Vector Store: Created ${chunks.length} semantic chunks`);
     
     // Generate embeddings for all chunks
     console.log('🔍 Voy Vector Store: Starting embedding generation for chunks...');
     this.generateChunkEmbeddings(chunks);
     
     return chunks;
+  }
+
+  // Create semantic chunks based on document structure
+  private createSemanticChunks(content: string): string[] {
+    const chunks: string[] = [];
+    
+    // Split content into lines
+    const lines = content.split('\n');
+    let currentChunk = '';
+    let currentSection = '';
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Skip empty lines
+      if (!line) {
+        continue;
+      }
+      
+      // Check for section headers (markdown headers)
+      const isHeader = line.startsWith('#');
+      const headerLevel = line.match(/^#+/)?.[0].length || 0;
+      
+      if (isHeader) {
+        // If we have content in current chunk, save it
+        if (currentChunk.trim().length > 0) {
+          chunks.push(currentChunk.trim());
+          currentChunk = '';
+        }
+        
+        // Start new chunk with header
+        currentSection = line;
+        currentChunk = line + '\n';
+        
+        // For main headers (H1, H2), start a new chunk
+        if (headerLevel <= 2) {
+          continue;
+        }
+      } else {
+        // Add line to current chunk
+        currentChunk += line + '\n';
+        
+        // Check if chunk is getting too large (max 800 characters for better semantic search)
+        if (currentChunk.length > 800) {
+          // Try to break at sentence boundaries
+          const sentences = this.splitIntoSentences(currentChunk);
+          
+          if (sentences.length > 1) {
+            // Keep first sentence in current chunk, start new chunk with rest
+            const firstSentence = sentences[0];
+            const remainingContent = sentences.slice(1).join('. ') + '.';
+            
+            // Save current chunk
+            if (firstSentence.trim().length > 0) {
+              chunks.push(firstSentence.trim());
+            }
+            
+            // Start new chunk with remaining content
+            currentChunk = remainingContent + '\n';
+          } else {
+            // No good break point, save current chunk and start new
+            chunks.push(currentChunk.trim());
+            currentChunk = '';
+          }
+        }
+      }
+    }
+    
+    // Add the last chunk if it has content
+    if (currentChunk.trim().length > 0) {
+      chunks.push(currentChunk.trim());
+    }
+    
+    // Post-process chunks to ensure they're not too small or too large
+    const processedChunks: string[] = [];
+    
+    for (const chunk of chunks) {
+      if (chunk.length < 50) {
+        // Too small, merge with next chunk or previous chunk
+        if (processedChunks.length > 0) {
+          processedChunks[processedChunks.length - 1] += '\n' + chunk;
+        } else {
+          processedChunks.push(chunk);
+        }
+      } else if (chunk.length > 1200) {
+        // Too large, split into smaller chunks
+        const subChunks = this.splitLargeChunk(chunk);
+        processedChunks.push(...subChunks);
+      } else {
+        processedChunks.push(chunk);
+      }
+    }
+    
+    return processedChunks;
+  }
+
+  // Split large chunks into smaller, more manageable pieces
+  private splitLargeChunk(chunk: string): string[] {
+    const subChunks: string[] = [];
+    const sentences = this.splitIntoSentences(chunk);
+    
+    let currentSubChunk = '';
+    
+    for (const sentence of sentences) {
+      const newSubChunk = currentSubChunk + (currentSubChunk ? ' ' : '') + sentence;
+      
+      if (newSubChunk.length > 600) {
+        if (currentSubChunk.length > 0) {
+          subChunks.push(currentSubChunk.trim());
+          currentSubChunk = sentence;
+        } else {
+          // Single sentence is too long, split it
+          const words = sentence.split(' ');
+          const midPoint = Math.floor(words.length / 2);
+          const firstHalf = words.slice(0, midPoint).join(' ');
+          const secondHalf = words.slice(midPoint).join(' ');
+          
+          if (firstHalf.length > 0) subChunks.push(firstHalf);
+          if (secondHalf.length > 0) subChunks.push(secondHalf);
+        }
+      } else {
+        currentSubChunk = newSubChunk;
+      }
+    }
+    
+    if (currentSubChunk.length > 0) {
+      subChunks.push(currentSubChunk.trim());
+    }
+    
+    return subChunks;
+  }
+
+  // Improved sentence splitting that handles markdown and special cases
+  private splitIntoSentences(text: string): string[] {
+    // Clean up the text
+    let cleanedText = text
+      .replace(/\n+/g, ' ') // Replace multiple newlines with space
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      .trim();
+    
+    // Split on sentence endings, but be more careful
+    const sentences = cleanedText
+      .split(/(?<=[.!?])\s+(?=[A-Z])/) // Split on sentence endings followed by capital letter
+      .map(sentence => sentence.trim())
+      .filter(sentence => sentence.length > 10 && sentence.length < 1000); // Filter out very short or very long sentences
+    
+    return sentences;
   }
 
   // Generate embeddings for chunks using sentence transformer
@@ -753,14 +941,6 @@ export class VoyVectorStore {
     } catch (error) {
       console.error('❌ Voy Vector Store: Failed to generate chunk embeddings:', error);
     }
-  }
-
-  private splitIntoSentences(text: string): string[] {
-    return text
-      .replace(/\n+/g, ' ')
-      .split(/[.!?]+/)
-      .map(sentence => sentence.trim())
-      .filter(sentence => sentence.length > 10);
   }
 
   // Calculate cosine similarity between two vectors
