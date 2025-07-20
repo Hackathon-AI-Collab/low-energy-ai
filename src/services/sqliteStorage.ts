@@ -561,7 +561,6 @@ export class SQLiteStorageService {
         FROM chunks 
         WHERE embedding IS NOT NULL AND embedding != ''
         ORDER BY chunkIndex
-        LIMIT 100
       `);
 
       console.log(`📊 SQLiteStorage: Found ${chunks.length} chunks with embeddings`);

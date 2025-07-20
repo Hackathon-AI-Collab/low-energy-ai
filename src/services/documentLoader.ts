@@ -53,17 +53,22 @@ export class DocumentLoader {
       await vectorStore.initialize();
       await storageService.initialize();
 
-      // ALWAYS CLEAR AND RELOAD - NO EXCEPTIONS
-      console.log('DocumentLoader: 🔥 AGGRESSIVE RELOAD - ALWAYS clearing all documents');
-      console.log('DocumentLoader: This ensures fresh content with proper MARCH algorithm descriptions');
+      // Check if documents already exist with embeddings
+      const existingDocuments = await vectorStore.getAllDocuments();
+      const existingChunks = existingDocuments.reduce((total, doc) => total + doc.chunkCount, 0);
       
-      try {
-        await vectorStore.clearAll();
-        console.log('DocumentLoader: ✅ Successfully cleared all documents');
-      } catch (clearError) {
-        console.error('DocumentLoader: ❌ Failed to clear documents:', clearError);
-        // Continue anyway
+      console.log(`DocumentLoader: Found ${existingDocuments.length} existing documents with ${existingChunks} chunks`);
+      
+      if (existingDocuments.length > 0 && existingChunks > 0) {
+        console.log('DocumentLoader: ✅ Documents already loaded with embeddings - skipping reload');
+        return {
+          success: existingDocuments.length,
+          failed: 0,
+          errors: []
+        };
       }
+      
+      console.log('DocumentLoader: 🔄 No existing documents found - loading fresh content');
 
       // Load all documents from assets/documents directory
       console.log('DocumentLoader: Loading all .md files from assets/documents/...');

@@ -11,6 +11,9 @@ config.resolver.resolverMainFields = ['react-native', 'browser', 'main'];
 config.resolver.blockList = [
   /node_modules\/voy-search\/.*\.wasm$/,
   /.*voy_search_bg\.wasm$/,
+  // Block SQLite WASM files that cause bundling issues
+  /node_modules\/expo-sqlite\/web\/wa-sqlite\/wa-sqlite\.wasm$/,
+  /.*wa-sqlite\.wasm$/,
   // Allow ONNX Runtime React Native but block other problematic bindings
   /.*napi-v3\/.*\/onnxruntime_binding\.node$/,
   /.*bin\/napi-v3\/.*\/onnxruntime_binding\.node$/,

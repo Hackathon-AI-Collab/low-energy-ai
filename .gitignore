@@ -37,3 +37,10 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# generated assets
+assets/embeddings/
+assets/embeddings-optimized/
+
+# logs
+log/

@@ -1,4 +1,7 @@
 import { SentenceTransformer } from './sentenceTransformer';
+import { BackgroundEmbeddingService } from './backgroundEmbeddingService';
+import { ProgressiveEmbeddingService } from './progressiveEmbeddingService';
+import { generateContentHash } from './preComputedEmbeddingService';
 import { SQLiteStorageService } from './sqliteStorage';
 
 export interface DocumentChunk {
@@ -31,14 +34,26 @@ export interface DocumentMetadata {
 }
 
 export class VoyVectorStore {
+  private static instance: VoyVectorStore;
   private documents: Map<string, DocumentMetadata> = new Map();
   private chunks: Map<string, DocumentChunk> = new Map();
   private storageService: SQLiteStorageService;
   private sentenceTransformer: SentenceTransformer | null = null;
+  private backgroundEmbedding: BackgroundEmbeddingService;
+  private progressiveEmbedding: ProgressiveEmbeddingService;
   private isInitialized = false;
 
-  constructor() {
+  private constructor() {
     this.storageService = SQLiteStorageService.getInstance();
+    this.backgroundEmbedding = BackgroundEmbeddingService.getInstance();
+    this.progressiveEmbedding = ProgressiveEmbeddingService.getInstance();
+  }
+
+  static getInstance(): VoyVectorStore {
+    if (!VoyVectorStore.instance) {
+      VoyVectorStore.instance = new VoyVectorStore();
+    }
+    return VoyVectorStore.instance;
   }
 
   // Initialize the vector store and load data from SQLite
@@ -46,8 +61,15 @@ export class VoyVectorStore {
     try {
       console.log('Voy Vector Store: Initializing...');
       
-      // Initialize SQLite storage
+      // Initialize SQLite storage and progressive embedding service
       await this.storageService.initialize();
+      const hasProgressiveEmbeddings = await this.progressiveEmbedding.initialize();
+      
+      if (hasProgressiveEmbeddings) {
+        console.log('📦 Progressive embeddings ready - memory-safe loading available');
+      } else {
+        console.log('🔄 No pre-computed embeddings - will generate dynamically');
+      }
       
       // Initialize sentence transformer
       await this.initializeSentenceTransformer();
@@ -95,14 +117,18 @@ export class VoyVectorStore {
     try {
       await this.ensureInitialized();
       
-      console.log(`Voy Vector Store: Adding document "${document.title}" with ${documentChunks.length} chunks`);
+      console.log(`📄 Voy Vector Store: Adding document "${document.title}" with ${documentChunks.length} chunks`);
       
       // Add document
       this.documents.set(document.id, document);
       
-      // Add chunks
+      // Add chunks and count embeddings
+      let chunksWithEmbeddings = 0;
       for (const chunk of documentChunks) {
         this.chunks.set(chunk.id, chunk);
+        if (chunk.embedding && chunk.embedding.length > 0) {
+          chunksWithEmbeddings++;
+        }
       }
       
       // Update document's chunk count
@@ -111,10 +137,32 @@ export class VoyVectorStore {
       // Save to SQLite
       await this.storageService.saveAll(this.documents, this.chunks);
       
-      console.log(`Voy Vector Store: Successfully added document "${document.title}"`);
+      console.log(`✅ Voy Vector Store: Successfully added document "${document.title}"`);
+      console.log(`   📊 Chunks: ${documentChunks.length} total, ${chunksWithEmbeddings} with embeddings`);
+      
+      // Log document category for search debugging
+      const category = this.determineDocumentCategory(document.title);
+      console.log(`   🏷️  Category: ${category}`);
+      
     } catch (error) {
-      console.error('Voy Vector Store: Failed to add document:', error);
+      console.error('❌ Voy Vector Store: Failed to add document:', error);
       throw error;
+    }
+  }
+  
+  // Helper to determine document category for debugging
+  private determineDocumentCategory(title: string): string {
+    const titleLower = title.toLowerCase();
+    if (titleLower.includes('tccc') || titleLower.includes('tactical combat')) {
+      return 'TCCC/Military Medical';
+    } else if (titleLower.includes('who') || titleLower.includes('world health')) {
+      return 'WHO/Medical';
+    } else if (titleLower.includes('fema') || titleLower.includes('usr') || titleLower.includes('search')) {
+      return 'FEMA/Search & Rescue';
+    } else if (titleLower.includes('insarag') || titleLower.includes('coordination')) {
+      return 'International/Coordination';
+    } else {
+      return 'Other';
     }
   }
 
@@ -137,9 +185,75 @@ export class VoyVectorStore {
         chunks: new Map()
       };
 
-      // Create chunks (simplified for compatibility)
-      const chunks = this.chunkContent(content, documentId);
+      // Create chunks (simplified for compatibility)  
+      let chunks = this.chunkContent(content, documentId);
       document.chunkCount = chunks.length;
+      
+      // Try to use progressive pre-computed embeddings first
+      const documentHash = generateContentHash(content);
+      console.log(`🔍 Checking for progressive embeddings for "${title}"`);
+      
+      try {
+        const progressiveEmbeddings = await this.progressiveEmbedding.getDocumentEmbeddings(documentId);
+        
+        if (progressiveEmbeddings) {
+          console.log(`📦 Using progressive pre-computed embeddings for "${title}" (${progressiveEmbeddings.length} chunks)`);
+          
+          // Map progressive embeddings to existing chunks using proper ID matching
+          console.log(`🔗 Mapping ${progressiveEmbeddings.length} progressive embeddings to ${chunks.length} chunks for "${title}"`);
+          
+          // Create a map of embedding chunkId -> embedding for efficient lookup
+          const embeddingMap = new Map();
+          for (const embedding of progressiveEmbeddings) {
+            if (embedding.chunkId) {
+              embeddingMap.set(embedding.chunkId, embedding.embedding);
+            }
+          }
+          
+          let mappedCount = 0;
+          let unmappedChunks = [];
+          
+          // First pass: Try to match by chunk ID
+          for (const chunk of chunks) {
+            if (chunk.id && embeddingMap.has(chunk.id)) {
+              chunk.embedding = embeddingMap.get(chunk.id);
+              mappedCount++;
+            } else {
+              unmappedChunks.push(chunk);
+            }
+          }
+          
+          console.log(`✅ ID-based mapping: ${mappedCount}/${chunks.length} chunks mapped successfully`);
+          
+          // Second pass: For unmapped chunks, try index-based mapping as fallback
+          if (unmappedChunks.length > 0) {
+            console.log(`🔄 Attempting index-based fallback for ${unmappedChunks.length} unmapped chunks`);
+            
+            let fallbackMapped = 0;
+            for (let i = 0; i < unmappedChunks.length && i < progressiveEmbeddings.length; i++) {
+              if (!unmappedChunks[i].embedding) { // Only if not already mapped
+                unmappedChunks[i].embedding = progressiveEmbeddings[i].embedding;
+                fallbackMapped++;
+              }
+            }
+            
+            console.log(`📍 Fallback mapping: ${fallbackMapped} additional chunks mapped`);
+            mappedCount += fallbackMapped;
+          }
+          
+          console.log(`📊 Final mapping result: ${mappedCount}/${chunks.length} chunks have embeddings (${((mappedCount/chunks.length)*100).toFixed(1)}%)`);
+          
+          if (mappedCount < chunks.length * 0.8) {
+            console.warn(`⚠️ Low embedding coverage for "${title}": only ${mappedCount}/${chunks.length} chunks have embeddings`);
+          }
+        } else {
+          console.log(`🔄 No progressive embeddings found, generating fresh embeddings for "${title}"`);
+          // Will generate embeddings dynamically in addDocumentWithChunks
+        }
+      } catch (error) {
+        console.warn(`⚠️ Progressive embedding loading failed for "${title}":`, error);
+        console.log(`🔄 Falling back to dynamic embedding generation`);
+      }
 
       // Add document and chunks
       await this.addDocumentWithChunks(document, chunks);
@@ -163,15 +277,29 @@ export class VoyVectorStore {
       const incompatibleChunks: DocumentChunk[] = [];
       
       // Calculate similarities with all chunks
+      const documentChunkCounts = new Map<string, number>();
+      const documentSimilarityStats = new Map<string, { total: number; sum: number; max: number }>();
+      
       for (const chunk of this.chunks.values()) {
+        const document = this.documents.get(chunk.documentId);
+        const docTitle = document?.title || chunk.documentId;
+        
+        // Count chunks per document
+        documentChunkCounts.set(docTitle, (documentChunkCounts.get(docTitle) || 0) + 1);
+        
         if (chunk.embedding && chunk.embedding.length > 0) {
-          console.log(`🔍 Checking chunk ${chunk.id} with embedding dimension: ${chunk.embedding.length}`);
-          
           if (chunk.embedding.length === queryEmbedding.length) {
             try {
               const similarity = this.calculateCosineSimilarity(queryEmbedding, chunk.embedding);
               similarities.push({ chunk, similarity });
-              console.log(`✅ Chunk ${chunk.id} similarity: ${similarity.toFixed(4)}`);
+              
+              // Track similarity stats per document
+              const stats = documentSimilarityStats.get(docTitle) || { total: 0, sum: 0, max: 0 };
+              stats.total++;
+              stats.sum += similarity;
+              stats.max = Math.max(stats.max, similarity);
+              documentSimilarityStats.set(docTitle, stats);
+              
             } catch (error) {
               console.error(`❌ Error calculating similarity for chunk ${chunk.id}:`, error);
               incompatibleChunks.push(chunk);
@@ -185,6 +313,31 @@ export class VoyVectorStore {
         }
       }
       
+      // Log document statistics to debug TCCC dominance
+      console.log('\n📊 Document Analysis:');
+      console.log('┌─────────────────────────────┬─────────┬──────────┬─────────┬─────────┐');
+      console.log('│ Document                    │ Chunks  │ Max Sim  │ Avg Sim │ Status  │');
+      console.log('├─────────────────────────────┼─────────┼──────────┼─────────┼─────────┤');
+      
+      for (const [docTitle, chunkCount] of documentChunkCounts.entries()) {
+        const stats = documentSimilarityStats.get(docTitle);
+        const maxSim = stats?.max.toFixed(4) || '0.0000';
+        const avgSim = stats ? (stats.sum / stats.total).toFixed(4) : '0.0000';
+        const status = stats ? (stats.total > 0 ? '✅ Embedded' : '❌ No Embed') : '❌ No Embed';
+        
+        console.log(`│ ${docTitle.padEnd(27)} │ ${chunkCount.toString().padStart(7)} │ ${maxSim.padStart(8)} │ ${avgSim.padStart(7)} │ ${status.padEnd(7)} │`);
+      }
+      console.log('└─────────────────────────────┴─────────┴──────────┴─────────┴─────────┘');
+      
+      // Highlight if TCCC is dominating
+      const tcccStats = documentSimilarityStats.get('Tccc Handbook V5');
+      if (tcccStats && tcccStats.max > 0.7) {
+        console.log(`\n⚠️  TCCC DOMINANCE DETECTED:`);
+        console.log(`   - TCCC max similarity: ${tcccStats.max.toFixed(4)}`);
+        console.log(`   - TCCC average similarity: ${(tcccStats.sum / tcccStats.total).toFixed(4)}`);
+        console.log(`   - This might explain why TCCC appears in all results`);
+      }
+      
       console.log(`📊 Search results: ${similarities.length} compatible chunks, ${incompatibleChunks.length} incompatible chunks`);
       
       if (similarities.length === 0) {
@@ -195,12 +348,25 @@ export class VoyVectorStore {
       // Sort by similarity and return top K
       similarities.sort((a, b) => b.similarity - a.similarity);
       
-      const topChunks = similarities.slice(0, topK).map(item => {
+      // Add document diversity - avoid returning all chunks from same document
+      const diverseResults = this.ensureDocumentDiversity(similarities, topK);
+      
+      const topChunks = diverseResults.map(item => {
         item.chunk.metadata.similarityScore = item.similarity;
         return item.chunk;
       });
       
-      console.log(`Voy Vector Store: Found ${topChunks.length} similar chunks`);
+      console.log(`Voy Vector Store: Found ${topChunks.length} similar chunks with diversity`);
+      
+      // Log detailed results for debugging
+      console.log('🔍 Top search results:');
+      for (let i = 0; i < Math.min(topChunks.length, 5); i++) {
+        const chunk = topChunks[i];
+        const document = this.documents.get(chunk.documentId);
+        const similarity = chunk.metadata.similarityScore?.toFixed(4) || 'N/A';
+        console.log(`   ${i + 1}. Document: ${document?.title || chunk.documentId} | Similarity: ${similarity}`);
+        console.log(`      Content: "${chunk.content.substring(0, 100)}..."`);
+      }
       
       // Log warning if there were incompatible chunks
       if (incompatibleChunks.length > 0) {
@@ -236,43 +402,56 @@ export class VoyVectorStore {
       
       // If we don't have embeddings, try to generate them
       if (chunksWithEmbeddings.length === 0) {
-        console.log('⚠️ Voy Vector Store: No embeddings found, attempting to generate embeddings...');
+        console.error('❌ Voy Vector Store: No embeddings found - attempting to generate ONNX embeddings...');
         const allChunks = Array.from(this.chunks.values());
-        await this.generateChunkEmbeddings(allChunks);
         
-        // Re-check embeddings after generation
-        const updatedChunksWithEmbeddings = Array.from(this.chunks.values()).filter(chunk => 
-          chunk.embedding && chunk.embedding.length > 0
-        );
-        console.log(`📊 Voy Vector Store: After generation, found ${updatedChunksWithEmbeddings.length} chunks with embeddings`);
-        
-        if (updatedChunksWithEmbeddings.length > 0) {
-          console.log('✅ Voy Vector Store: Successfully generated embeddings, proceeding with embedding search');
-          chunksWithEmbeddings.length = 0; // Clear the array
-          chunksWithEmbeddings.push(...updatedChunksWithEmbeddings); // Add the new embeddings
-        } else {
-          console.error('❌ Voy Vector Store: Failed to generate embeddings, cannot perform search');
+        try {
+          await this.generateChunkEmbeddings(allChunks);
+          
+          // Re-check embeddings after generation
+          const updatedChunksWithEmbeddings = Array.from(this.chunks.values()).filter(chunk => 
+            chunk.embedding && chunk.embedding.length > 0
+          );
+          console.log(`📊 Voy Vector Store: After ONNX generation, found ${updatedChunksWithEmbeddings.length} chunks with embeddings`);
+          
+          if (updatedChunksWithEmbeddings.length > 0) {
+            console.log('✅ Voy Vector Store: Successfully generated ONNX embeddings, proceeding with search');
+            chunksWithEmbeddings.length = 0; // Clear the array
+            chunksWithEmbeddings.push(...updatedChunksWithEmbeddings); // Add the new embeddings
+          } else {
+            console.error('❌ Voy Vector Store: ONNX embedding generation failed completely - no search results possible');
+            console.error('❌ Please check that the ONNX model is properly loaded and working');
+            return [];
+          }
+        } catch (error) {
+          console.error('❌ Voy Vector Store: ONNX embedding generation failed:', error);
+          console.error('❌ Cannot perform search without proper embeddings');
           return [];
         }
       }
       
-      // EMBEDDING-ONLY SEARCH - NO FALLBACK
+      // ONNX-ONLY SEARCH - NO HASH FALLBACK
       const sentenceTransformer = this.getSentenceTransformer();
       if (!sentenceTransformer) {
-        console.error('❌ Voy Vector Store: No sentence transformer available, cannot perform embedding search');
+        console.error('❌ Voy Vector Store: No sentence transformer available, cannot perform search');
+        return [];
+      }
+      
+      if (!sentenceTransformer.isReady()) {
+        console.error('❌ Voy Vector Store: Sentence transformer not ready (ONNX model not loaded)');
         return [];
       }
       
       if (chunksWithEmbeddings.length === 0) {
-        console.error('❌ Voy Vector Store: No embeddings available, cannot perform embedding search');
+        console.error('❌ Voy Vector Store: No ONNX embeddings available, cannot perform search');
         return [];
       }
       
-      console.log('✅ Voy Vector Store: Using embedding-based search ONLY');
+      console.log('✅ Voy Vector Store: Using ONNX embedding-based search ONLY (no hash fallback)');
       
       try {
         console.log('🔍 Voy Vector Store: Generating query embedding...');
-        const queryEmbedding = await sentenceTransformer.generateEmbedding(query);
+        const queryEmbedding = await this.backgroundEmbedding.generateEmbedding(query, 100); // High priority for queries
         console.log(`📏 Query embedding dimension: ${queryEmbedding.length}`);
         
         // Check if we have any chunks with compatible dimensions
@@ -301,8 +480,9 @@ export class VoyVectorStore {
         return results;
         
       } catch (error) {
-        console.error('❌ Voy Vector Store: Error in embedding search:', error);
-        console.error('❌ Voy Vector Store: No fallback available - returning empty results');
+        console.error('❌ Voy Vector Store: Error in ONNX embedding search:', error);
+        console.error('❌ Hash fallback is disabled - returning empty results');
+        console.error('❌ Please ensure ONNX model is properly loaded and working');
         return [];
       }
       
@@ -689,98 +869,91 @@ export class VoyVectorStore {
     return chunks;
   }
 
-  // Create semantic chunks based on document structure
+  // Create semantic chunks - simple approach: just break into coherent sections
   private createSemanticChunks(content: string): string[] {
+    console.log('🔍 Creating semantic chunks...');
+    console.log(`📄 Input content length: ${content.length}`);
+    
     const chunks: string[] = [];
+    const chunkSize = 800; // Target chunk size
+    const overlap = 100;   // Overlap between chunks
     
-    // Split content into lines
-    const lines = content.split('\n');
+    // Clean the content first
+    const cleanedContent = content
+      .replace(/---\s*## Page \d+/g, '') // Remove page markers
+      .replace(/\n+/g, ' ') // Replace multiple newlines with spaces
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      .trim();
+    
+    console.log(`📄 Cleaned content length: ${cleanedContent.length}`);
+    
+    // Split into sentences for better chunk boundaries
+    const sentences = cleanedContent.split(/(?<=[.!?])\s+/);
+    console.log(`📄 Split into ${sentences.length} sentences`);
+    
     let currentChunk = '';
-    let currentSection = '';
+    let chunkCount = 0;
     
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
+    for (const sentence of sentences) {
+      const trimmedSentence = sentence.trim();
+      if (!trimmedSentence) continue;
       
-      // Skip empty lines
-      if (!line) {
-        continue;
-      }
-      
-      // Check for section headers (markdown headers)
-      const isHeader = line.startsWith('#');
-      const headerLevel = line.match(/^#+/)?.[0].length || 0;
-      
-      if (isHeader) {
-        // If we have content in current chunk, save it
-        if (currentChunk.trim().length > 0) {
-          chunks.push(currentChunk.trim());
-          currentChunk = '';
-        }
+      // If adding this sentence would exceed chunk size, save current chunk
+      if (currentChunk.length > 0 && (currentChunk.length + trimmedSentence.length) > chunkSize) {
+        chunks.push(currentChunk.trim());
+        chunkCount++;
+        console.log(`📄 Added chunk ${chunkCount} (${currentChunk.length} chars): "${currentChunk.substring(0, 100)}..."`);
         
-        // Start new chunk with header
-        currentSection = line;
-        currentChunk = line + '\n';
-        
-        // For main headers (H1, H2), start a new chunk
-        if (headerLevel <= 2) {
-          continue;
-        }
+        // Start new chunk with overlap from previous chunk
+        const words = currentChunk.trim().split(' ');
+        const overlapWords = words.slice(-Math.floor(overlap / 5)); // Roughly 100 chars of overlap
+        currentChunk = overlapWords.join(' ') + ' ' + trimmedSentence;
       } else {
-        // Add line to current chunk
-        currentChunk += line + '\n';
-        
-        // Check if chunk is getting too large (max 800 characters for better semantic search)
-        if (currentChunk.length > 800) {
-          // Try to break at sentence boundaries
-          const sentences = this.splitIntoSentences(currentChunk);
-          
-          if (sentences.length > 1) {
-            // Keep first sentence in current chunk, start new chunk with rest
-            const firstSentence = sentences[0];
-            const remainingContent = sentences.slice(1).join('. ') + '.';
-            
-            // Save current chunk
-            if (firstSentence.trim().length > 0) {
-              chunks.push(firstSentence.trim());
-            }
-            
-            // Start new chunk with remaining content
-            currentChunk = remainingContent + '\n';
-          } else {
-            // No good break point, save current chunk and start new
-            chunks.push(currentChunk.trim());
-            currentChunk = '';
-          }
-        }
+        currentChunk += (currentChunk ? ' ' : '') + trimmedSentence;
       }
     }
     
-    // Add the last chunk if it has content
-    if (currentChunk.trim().length > 0) {
+    // Add the final chunk if it has content
+    if (currentChunk.trim().length > 50) {
+      chunks.push(currentChunk.trim());
+      chunkCount++;
+      console.log(`📄 Added final chunk ${chunkCount} (${currentChunk.length} chars): "${currentChunk.substring(0, 100)}..."`);
+    }
+    
+    console.log(`📄 Successfully created ${chunks.length} chunks from document`);
+    return chunks;
+  }
+  
+  // Basic cleanup of chunk content
+  private cleanChunkContent(content: string): string {
+    return content
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      .trim();
+  }
+  
+  // Fallback regular chunking method
+  private createRegularChunks(content: string): string[] {
+    const chunks: string[] = [];
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    
+    let currentChunk = '';
+    for (const sentence of sentences) {
+      const cleanSentence = sentence.trim();
+      if (currentChunk.length + cleanSentence.length > 600) {
+        if (currentChunk.length > 50) {
+          chunks.push(currentChunk.trim());
+        }
+        currentChunk = cleanSentence;
+      } else {
+        currentChunk += (currentChunk ? '. ' : '') + cleanSentence;
+      }
+    }
+    
+    if (currentChunk.length > 50) {
       chunks.push(currentChunk.trim());
     }
     
-    // Post-process chunks to ensure they're not too small or too large
-    const processedChunks: string[] = [];
-    
-    for (const chunk of chunks) {
-      if (chunk.length < 50) {
-        // Too small, merge with next chunk or previous chunk
-        if (processedChunks.length > 0) {
-          processedChunks[processedChunks.length - 1] += '\n' + chunk;
-        } else {
-          processedChunks.push(chunk);
-        }
-      } else if (chunk.length > 1200) {
-        // Too large, split into smaller chunks
-        const subChunks = this.splitLargeChunk(chunk);
-        processedChunks.push(...subChunks);
-      } else {
-        processedChunks.push(chunk);
-      }
-    }
-    
-    return processedChunks;
+    return chunks;
   }
 
   // Split large chunks into smaller, more manageable pieces
@@ -857,13 +1030,26 @@ export class VoyVectorStore {
         console.log(`📄 Chunk content preview: "${chunk.content.substring(0, 100)}${chunk.content.length > 100 ? '...' : ''}"`);
         
         try {
-          const embedding = await sentenceTransformer.generateEmbedding(chunk.content);
+          const embedding = await this.backgroundEmbedding.generateEmbedding(chunk.content, 50); // Medium priority for chunks
           chunk.embedding = embedding;
-          console.log(`✅ Voy Vector Store: Successfully generated embedding for chunk ${i + 1}`);
+          console.log(`✅ Voy Vector Store: Successfully generated ONNX embedding for chunk ${i + 1}`);
           console.log(`📏 Embedding dimension: ${embedding.length}`);
+          
+          // Validate embedding quality (ONNX embeddings should have values in reasonable range)
+          const avgValue = embedding.reduce((sum, val) => sum + Math.abs(val), 0) / embedding.length;
+          console.log(`📊 Embedding quality check - Average absolute value: ${avgValue.toFixed(6)}`);
+          
+          if (avgValue < 0.01) {
+            console.warn(`⚠️ Embedding seems too small (avg: ${avgValue.toFixed(6)}) - might be poor quality`);
+          } else {
+            console.log(`✅ Embedding quality looks good (avg: ${avgValue.toFixed(6)})`);
+          }
+          
         } catch (error) {
-          console.error(`❌ Voy Vector Store: Failed to generate embedding for chunk ${i + 1}:`, error);
-          // Continue with other chunks
+          console.error(`❌ Voy Vector Store: Failed to generate ONNX embedding for chunk ${i + 1}:`, error);
+          console.error(`❌ This chunk will be excluded from search results`);
+          // Leave embedding empty - chunk will be excluded from search
+          chunk.embedding = [];
         }
       }
       
@@ -872,6 +1058,64 @@ export class VoyVectorStore {
     } catch (error) {
       console.error('❌ Voy Vector Store: Failed to generate chunk embeddings:', error);
     }
+  }
+
+  // Ensure document diversity in search results
+  private ensureDocumentDiversity(
+    similarities: { chunk: DocumentChunk; similarity: number }[],
+    topK: number
+  ): { chunk: DocumentChunk; similarity: number }[] {
+    const diverseResults: { chunk: DocumentChunk; similarity: number }[] = [];
+    const documentChunkCounts = new Map<string, number>();
+    const maxChunksPerDocument = Math.max(1, Math.floor(topK / 3)); // At most 1/3 from same document
+    
+    console.log(`🔍 Applying diversity filter: max ${maxChunksPerDocument} chunks per document`);
+    
+    for (const item of similarities) {
+      const documentId = item.chunk.documentId;
+      const currentCount = documentChunkCounts.get(documentId) || 0;
+      
+      // Always include the first result, then apply diversity
+      if (diverseResults.length === 0 || currentCount < maxChunksPerDocument) {
+        diverseResults.push(item);
+        documentChunkCounts.set(documentId, currentCount + 1);
+        
+        if (diverseResults.length >= topK) {
+          break;
+        }
+      }
+    }
+    
+    // If we don't have enough diverse results, fill remaining with best scores
+    if (diverseResults.length < topK) {
+      const remainingSlots = topK - diverseResults.length;
+      const usedChunkIds = new Set(diverseResults.map(item => item.chunk.id));
+      
+      for (const item of similarities) {
+        if (!usedChunkIds.has(item.chunk.id)) {
+          diverseResults.push(item);
+          if (diverseResults.length >= topK) {
+            break;
+          }
+        }
+      }
+    }
+    
+    // Log diversity statistics
+    const documentStats = new Map<string, number>();
+    diverseResults.forEach(item => {
+      const documentId = item.chunk.documentId;
+      const document = this.documents.get(documentId);
+      const title = document?.title || documentId;
+      documentStats.set(title, (documentStats.get(title) || 0) + 1);
+    });
+    
+    console.log('📊 Result diversity:');
+    for (const [title, count] of documentStats.entries()) {
+      console.log(`   - ${title}: ${count} chunk(s)`);
+    }
+    
+    return diverseResults;
   }
 
   // Calculate cosine similarity between two vectors
@@ -895,5 +1139,15 @@ export class VoyVectorStore {
     }
     
     return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+  }
+
+  // Get embedding generation progress
+  getEmbeddingProgress() {
+    return this.backgroundEmbedding.getProgress();
+  }
+
+  // Get background embedding queue status  
+  getEmbeddingQueueStatus() {
+    return this.backgroundEmbedding.getQueueStatus();
   }
 } 

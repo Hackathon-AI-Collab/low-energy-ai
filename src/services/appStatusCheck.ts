@@ -1,7 +1,7 @@
 import { ModelSettingsService } from './modelSettings';
 import { SentenceTransformer } from './sentenceTransformer';
-import { VoyRAG } from './voyRAG';
-import { VoyVectorStore } from './voyVectorStore';
+import { VectorRAG } from './vectorRAG';
+import { SQLiteVectorStorage } from './sqliteVectorStorage';
 
 export interface AppStatus {
   sentenceTransformer: {
@@ -11,13 +11,13 @@ export interface AppStatus {
     dimension: number;
     ready: boolean;
   };
-  voyVectorStore: {
+  vectorStorage: {
     initialized: boolean;
     documentCount: number;
     chunkCount: number;
     ready: boolean;
   };
-  voyRAG: {
+  vectorRAG: {
     initialized: boolean;
     llmReady: boolean;
     ready: boolean;
@@ -44,13 +44,13 @@ export async function checkAppStatus(): Promise<AppStatus> {
       dimension: 0,
       ready: false
     },
-    voyVectorStore: {
+    vectorStorage: {
       initialized: false,
       documentCount: 0,
       chunkCount: 0,
       ready: false
     },
-    voyRAG: {
+    vectorRAG: {
       initialized: false,
       llmReady: false,
       ready: false
@@ -112,52 +112,52 @@ export async function checkAppStatus(): Promise<AppStatus> {
       console.error('❌ Sentence transformer error:', error);
     }
 
-    // Check Voy Vector Store
+    // Check SQLite Vector Storage
     try {
-      const vectorStore = new VoyVectorStore();
-      await vectorStore.initialize();
+      const vectorStorage = new SQLiteVectorStorage();
+      await vectorStorage.initialize();
       
-      const stats = await vectorStore.getStats();
-      status.voyVectorStore = {
+      const stats = await vectorStorage.getDocumentStats();
+      status.vectorStorage = {
         initialized: true,
         documentCount: stats.documents,
         chunkCount: stats.chunks,
         ready: true
       };
-      console.log('✅ Voy vector store working correctly');
+      console.log('✅ SQLite vector storage working correctly');
     } catch (error) {
-      status.overall.errors.push(`Vector store error: ${error}`);
-      console.error('❌ Vector store error:', error);
+      status.overall.errors.push(`Vector storage error: ${error}`);
+      console.error('❌ Vector storage error:', error);
     }
 
-    // Check Voy RAG
+    // Check Vector RAG
     try {
-      const voyRAG = new VoyRAG();
-      await voyRAG.initialize();
+      const vectorRAG = VectorRAG.getInstance();
+      await vectorRAG.initialize();
       
-      status.voyRAG = {
+      status.vectorRAG = {
         initialized: true,
         llmReady: true, // Assuming it's ready if initialization succeeds
         ready: true
       };
 
       // Test a simple query
-      const testResponse = await voyRAG.processQuery('What is TCCC?');
+      const testResponse = await vectorRAG.query('What is TCCC?');
       if (testResponse.text && testResponse.text.length > 0) {
-        console.log('✅ Voy RAG working correctly');
+        console.log('✅ Vector RAG working correctly');
       } else {
         status.overall.warnings.push('RAG response empty');
       }
     } catch (error) {
-      status.overall.errors.push(`Voy RAG error: ${error}`);
-      console.error('❌ Voy RAG error:', error);
+      status.overall.errors.push(`Vector RAG error: ${error}`);
+      console.error('❌ Vector RAG error:', error);
     }
 
     // Determine overall status
     status.overall.ready = 
       status.sentenceTransformer.ready &&
-      status.voyVectorStore.ready &&
-      status.voyRAG.ready &&
+      status.vectorStorage.ready &&
+      status.vectorRAG.ready &&
       status.overall.errors.length === 0;
 
     if (status.overall.ready) {
@@ -186,16 +186,16 @@ export function printAppStatus(status: AppStatus): void {
   console.log(`  Dimension: ${status.sentenceTransformer.dimension}`);
   console.log(`  Ready: ${status.sentenceTransformer.ready ? '✅' : '❌'}`);
 
-  console.log('\n🗄️ Voy Vector Store:');
-  console.log(`  Initialized: ${status.voyVectorStore.initialized ? '✅' : '❌'}`);
-  console.log(`  Documents: ${status.voyVectorStore.documentCount}`);
-  console.log(`  Chunks: ${status.voyVectorStore.chunkCount}`);
-  console.log(`  Ready: ${status.voyVectorStore.ready ? '✅' : '❌'}`);
+  console.log('\n🗄️ SQLite Vector Storage:');
+  console.log(`  Initialized: ${status.vectorStorage.initialized ? '✅' : '❌'}`);
+  console.log(`  Documents: ${status.vectorStorage.documentCount}`);
+  console.log(`  Chunks: ${status.vectorStorage.chunkCount}`);
+  console.log(`  Ready: ${status.vectorStorage.ready ? '✅' : '❌'}`);
 
   console.log('\n🧠 Voy RAG:');
-  console.log(`  Initialized: ${status.voyRAG.initialized ? '✅' : '❌'}`);
-  console.log(`  LLM Ready: ${status.voyRAG.llmReady ? '✅' : '❌'}`);
-  console.log(`  Ready: ${status.voyRAG.ready ? '✅' : '❌'}`);
+  console.log(`  Initialized: ${status.vectorRAG.initialized ? '✅' : '❌'}`);
+  console.log(`  LLM Ready: ${status.vectorRAG.llmReady ? '✅' : '❌'}`);
+  console.log(`  Ready: ${status.vectorRAG.ready ? '✅' : '❌'}`);
 
   console.log('\n⚙️ Settings:');
   console.log(`  Loaded: ${status.settings.loaded ? '✅' : '❌'}`);

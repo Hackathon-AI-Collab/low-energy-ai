@@ -1,4 +1,6 @@
 import { ModelSettingsService } from './modelSettings';
+import { ModelInitializationService } from './modelInitializationService';
+import * as FileSystem from 'expo-file-system';
 
 // ONNX Runtime will be imported conditionally when needed
 let InferenceSession: any = null;
@@ -20,7 +22,7 @@ async function loadONNXRuntime() {
     if (error instanceof Error) {
       console.warn('Sentence Transformer: Error details:', error.message);
     }
-    // ONNX Runtime will be null, and we'll use hash-based embeddings
+    // ONNX Runtime will be null, and system will fail (hash embeddings disabled)
   }
 }
 
@@ -123,10 +125,12 @@ export class SentenceTransformer {
   private dimension: number = 384;
   private isModelLoaded: boolean = false;
   private settings: ModelSettingsService;
+  private modelInitService: ModelInitializationService;
   private isReactNative: boolean = false;
 
   constructor() {
     this.settings = ModelSettingsService.getInstance();
+    this.modelInitService = ModelInitializationService.getInstance();
     // Detect React Native environment
     this.isReactNative = typeof navigator === 'undefined' || navigator.product === 'ReactNative';
   }
@@ -155,7 +159,7 @@ export class SentenceTransformer {
       const modelType = this.settings.getSentenceTransformerModel();
       
       if (modelType === 'hash') {
-        console.log('Using hash-based embeddings (no model loading)');
+        console.error('Hash embeddings disabled - model type "hash" not supported');
         this.isModelLoaded = false;
         return;
       }
@@ -177,10 +181,74 @@ export class SentenceTransformer {
         console.log(`  - Model path: ${modelPath}`);
         console.log(`  - Model path exists: ${!!modelPath}`);
         
-        if (!modelPath) {
-          console.warn('Local model path not set, using hash-based embeddings');
+        if (typeof modelPath !== 'string' || !modelPath) {
+          console.error('Local model path not set or invalid - attempting to download ONNX model');
           this.isModelLoaded = false;
+          
+          // Try to download the missing ONNX model
+          try {
+            console.log('🔄 Downloading missing all-MiniLM-L6-v2.onnx model...');
+            const { ModelDownloadService } = await import('./modelDownloadService');
+            const downloadService = ModelDownloadService.getInstance();
+            
+            const downloadPath = await downloadService.downloadModel({
+              modelName: 'Xenova/all-MiniLM-L6-v2 (ONNX)',
+              modelType: 'sentence-transformer',
+              url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx',
+              fileName: 'all-MiniLM-L6-v2.onnx',
+              onProgress: (progress) => {
+                const percent = Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100);
+                console.log(`📥 Downloading ONNX model: ${percent}%`);
+              }
+            });
+            
+            console.log(`✅ ONNX model downloaded to: ${downloadPath}`);
+            console.log('🔄 Reinitializing sentence transformer with downloaded model...');
+            
+            // Reinitialize with the downloaded model
+            await this.initialize();
+            return;
+            
+          } catch (downloadError) {
+            console.error('❌ Failed to download ONNX model:', downloadError);
+            this.isModelLoaded = false;
+          }
         } else {
+          // Check if the model file actually exists
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(modelPath);
+            
+            if (!fileInfo.exists) {
+              console.error(`❌ ONNX model file not found at: ${modelPath}`);
+              console.log('🔄 Attempting to download missing ONNX model...');
+              
+              const { ModelDownloadService } = await import('./modelDownloadService');
+              const downloadService = ModelDownloadService.getInstance();
+              
+              const downloadPath = await downloadService.downloadModel({
+                modelName: 'Xenova/all-MiniLM-L6-v2 (ONNX)',
+                modelType: 'sentence-transformer',
+                url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx',
+                fileName: 'all-MiniLM-L6-v2.onnx',
+                onProgress: (progress) => {
+                  const percent = Math.round((progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100);
+                  console.log(`📥 Downloading ONNX model: ${percent}%`);
+                }
+              });
+              
+              console.log(`✅ ONNX model downloaded to: ${downloadPath}`);
+              console.log('🔄 Reinitializing sentence transformer with downloaded model...');
+              
+              // Reinitialize with the downloaded model
+              await this.initialize();
+              return;
+            }
+          } catch (downloadError) {
+            console.error('❌ Failed to check/download ONNX model:', downloadError);
+            this.isModelLoaded = false;
+            return;
+          }
+          
           // Try to load ONNX Runtime if not already loaded
           console.log('🔄 Loading ONNX Runtime...');
           await loadONNXRuntime();
@@ -191,7 +259,7 @@ export class SentenceTransformer {
           console.log(`  - onnxRuntimeLoaded: ${onnxRuntimeLoaded}`);
           
           if (!InferenceSession) {
-            console.warn('ONNX Runtime not available, using hash-based embeddings');
+            console.error('ONNX Runtime not available - hash embeddings disabled');
             this.isModelLoaded = false;
           } else {
             try {
@@ -214,7 +282,7 @@ export class SentenceTransformer {
           }
         }
       } else {
-        console.log('Using hash-based embeddings (no local model specified)');
+        console.error('Hash embeddings disabled (no local model specified)');
         console.log(`  - Model type: ${modelType}`);
         this.isModelLoaded = false;
       }
@@ -222,7 +290,7 @@ export class SentenceTransformer {
       console.log(`Sentence Transformer initialized with model: ${this.modelName}`);
     } catch (error) {
       console.error('Failed to initialize Sentence Transformer:', error);
-      console.log('Falling back to hash-based embeddings');
+      console.error('Hash embeddings disabled - initialization failed');
       this.isModelLoaded = false;
     }
   }
@@ -231,6 +299,20 @@ export class SentenceTransformer {
     console.log('🔍 Sentence Transformer: Starting embedding generation...');
     console.log(`📝 Text length: ${text.length} characters`);
     console.log(`📝 Text preview: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+    
+    // Ensure model is ready before generating embeddings
+    console.log('🔄 Ensuring model is ready...');
+    const modelReady = await this.modelInitService.ensureModelReady();
+    if (!modelReady) {
+      const status = this.modelInitService.getStatus();
+      throw new Error(`Model not ready: ${status.error || 'Unknown error'}`);
+    }
+    
+    // If model was just initialized, reinitialize the sentence transformer
+    if (!this.isModelLoaded) {
+      console.log('🔄 Model was just downloaded, reinitializing sentence transformer...');
+      await this.initialize();
+    }
     
     // Detailed model status check
     console.log('🔍 Detailed Model Status Check:');
@@ -258,7 +340,7 @@ export class SentenceTransformer {
       console.log(`  - onnxRuntimeLoaded: ${onnxRuntimeLoaded}`);
       
       if (!Tensor) {
-        console.warn('⚠️ ONNX Runtime Tensor not available, falling back to hash embeddings');
+        console.error('❌ ONNX Runtime Tensor not available - REFUSING to generate embedding');
         console.log('🔍 ONNX Runtime Error Details:');
         try {
           const onnxRuntime = require('onnxruntime-react-native');
@@ -268,7 +350,7 @@ export class SentenceTransformer {
         } catch (error) {
           console.error('  - Failed to require onnxruntime-react-native:', error);
         }
-        return this.generateHashEmbedding(text);
+        throw new Error('ONNX Runtime Tensor not available and hash embeddings are disabled');
       }
       
       try {
@@ -397,69 +479,28 @@ export class SentenceTransformer {
         console.error('❌ Error generating embedding with ONNX model:', error);
         console.error('❌ Error details:', error instanceof Error ? error.message : String(error));
         console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-        console.log('🔄 Falling back to hash-based embedding...');
-        return this.generateHashEmbedding(text);
+        console.error('❌ REFUSING to fall back to hash embeddings');
+        throw new Error(`ONNX embedding generation failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     } else {
-      console.log('⚠️ Model not loaded, using hash-based embedding');
+      console.error('❌ ONNX model not loaded - REFUSING to generate hash embeddings');
       console.log(`🔧 Model loaded: ${this.isModelLoaded}`);
       console.log(`🔧 Model available: ${!!this.model}`);
       console.log(`🔧 Tokenizer available: ${!!this.tokenizer}`);
       
       // Additional debugging for model loading issues
       if (!this.isModelLoaded) {
-        console.log('🔍 Model loading failed. Checking settings...');
-        console.log(`  - Model type: ${this.settings.getSentenceTransformerModel()}`);
-        console.log(`  - Model path: ${this.settings.getSentenceTransformerPath()}`);
-        console.log(`  - Model name: ${this.settings.getSentenceTransformerName()}`);
+        console.error('🔍 Model loading failed. Checking settings...');
+        console.error(`  - Model type: ${this.settings.getSentenceTransformerModel()}`);
+        console.error(`  - Model path: ${this.settings.getSentenceTransformerPath()}`);
+        console.error(`  - Model name: ${this.settings.getSentenceTransformerName()}`);
       }
       
-      return this.generateHashEmbedding(text);
+      throw new Error('ONNX model not available and hash embeddings are disabled. Please ensure the sentence transformer model is properly loaded.');
     }
   }
 
-  private generateHashEmbedding(text: string): number[] {
-    console.log('🔧 Using hash-based embedding generation');
-    console.log(`📝 Input text length: ${text.length} characters`);
-    
-    // Simple hash-based embedding for fallback
-    const words = text.toLowerCase().split(/\s+/);
-    const embedding = new Array(this.dimension).fill(0);
-    
-    console.log(`🔤 Processing ${words.length} words`);
-    
-    for (let i = 0; i < words.length; i++) {
-      const word = words[i];
-      const hash = this.simpleHash(word);
-      
-      // Distribute the hash across the embedding dimensions
-      for (let j = 0; j < this.dimension; j++) {
-        const position = (hash + j * 31) % this.dimension;
-        embedding[position] += Math.sin(hash + j) * 0.1;
-      }
-    }
-    
-    // Normalize the embedding
-    const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
-    const normalizedEmbedding = embedding.map(val => val / magnitude);
-    
-    console.log(`📏 Hash embedding dimension: ${normalizedEmbedding.length}`);
-    console.log(`📊 Hash embedding magnitude: ${magnitude.toFixed(6)}`);
-    console.log(`📊 First 5 values: [${normalizedEmbedding.slice(0, 5).map(v => v.toFixed(4)).join(', ')}]`);
-    console.log('✅ Hash-based embedding generation completed');
-    
-    return normalizedEmbedding;
-  }
 
-  private simpleHash(str: string): number {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-    return Math.abs(hash);
-  }
 
   async calculateSimilarity(embedding1: number[], embedding2: number[]): Promise<number> {
     if (embedding1.length !== embedding2.length) {
@@ -499,7 +540,7 @@ export class SentenceTransformer {
   }
 
   isReady(): boolean {
-    return this.isModelLoaded || true; // Always ready with hash fallback
+    return this.isModelLoaded; // Only ready if ONNX model is loaded
   }
 
   getDimension(): number {

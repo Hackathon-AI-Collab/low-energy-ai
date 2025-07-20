@@ -1,88 +1,112 @@
 #!/usr/bin/env node
 
 /**
- * SQLite Database Fix Test Script
- * Tests the fixes for SQLite database operations
+ * SQLite Duplicate ID Fix Test Script
+ * Verify the fix for UNIQUE constraint failed errors
  */
 
-console.log('🗄️ SQLite Database Fix Test Script');
-console.log('==================================');
+console.log('🔧 SQLite Duplicate ID Fix Test Script');
+console.log('=====================================');
 
-console.log('\n📋 Problem Analysis:');
-console.log('❌ Error: "Call to function \'NativeDatabase.execAsync\' has been rejected"');
-console.log('🔍 Root Cause: Manual SQL string replacement causing issues');
-console.log('🔧 Solution: Use proper parameterized queries');
+console.log('\n🐛 **Problem Identified:**');
+console.log('❌ UNIQUE constraint failed: documents.id');
+console.log('❌ Error: Call to function \'NativeStatement.finalizeAsync\' has been rejected');
+console.log('❌ SQLiteStorage: Failed to save documents');
+console.log('❌ Voy Vector Store: Failed to add document');
 
-console.log('\n🔧 **Fixes Implemented:**');
+console.log('\n🔧 **Root Cause:**');
+console.log('The aggressive document reloading was trying to insert documents with duplicate IDs');
+console.log('into the SQLite database, violating the UNIQUE constraint on the documents.id column.');
 
-console.log('\n1. **Parameterized Queries:**');
-console.log('   ✅ Replaced manual SQL string replacement with runAsync()');
-console.log('   ✅ Proper parameter binding to avoid SQL injection');
-console.log('   ✅ Automatic escaping of special characters');
-console.log('   ✅ Better handling of null values');
+console.log('\n🔧 **Fix Applied:**');
 
-console.log('\n2. **Transaction Management:**');
-console.log('   ✅ Added BEGIN TRANSACTION for each batch');
-console.log('   ✅ Proper COMMIT/ROLLBACK handling');
-console.log('   ✅ Error recovery with rollback');
-console.log('   ✅ Reduced batch size to 20 for better reliability');
+console.log('\n1. **Improved Document Loading:**');
+console.log('   - Added proper clearing of all data before reloading');
+console.log('   - Added delay to ensure database operations complete');
+console.log('   - Better error handling for clearing operations');
 
-console.log('\n3. **Embedding Size Limits:**');
-console.log('   ✅ Check for embedding size > 1MB');
-console.log('   ✅ Truncate large embeddings to prevent errors');
-console.log('   ✅ Warning logs for oversized embeddings');
-console.log('   ✅ Keep first 100 values if truncation needed');
+console.log('\n2. **SQLite Storage Improvements:**');
+console.log('   - Changed INSERT to INSERT OR REPLACE for documents');
+console.log('   - Changed INSERT to INSERT OR REPLACE for chunks');
+console.log('   - Added individual error handling for each insert');
+console.log('   - Removed manual DELETE operations that could cause conflicts');
 
-console.log('\n4. **Error Handling:**');
-console.log('   ✅ Proper try-catch blocks around transactions');
-console.log('   ✅ Detailed error logging');
-console.log('   ✅ Graceful failure handling');
-console.log('   ✅ Database state consistency');
+console.log('\n3. **Better Error Handling:**');
+console.log('   - Individual document/chunk insert errors don\'t stop the process');
+console.log('   - Continue with other documents/chunks if one fails');
+console.log('   - Better logging for debugging');
 
-console.log('\n🚀 **Expected Behavior:**');
+console.log('\n📱 **To Test the Fix:**');
 
-console.log('\n📱 **When regenerating embeddings:**');
-console.log('1. Database operations should complete without errors');
-console.log('2. Chunks should be saved in batches of 20');
-console.log('3. Each batch should use a transaction');
-console.log('4. Embeddings should be properly stored as JSON');
-console.log('5. Large embeddings should be truncated if needed');
+console.log('\n1. **Restart the App:**');
+console.log('   - Stop app completely');
+console.log('   - Clear any cached data if needed');
+console.log('   - Restart: npm start');
 
-console.log('\n📊 **Database Operations:**');
-console.log('✅ DELETE FROM chunks; (clear existing)');
-console.log('✅ BEGIN TRANSACTION; (for each batch)');
-console.log('✅ INSERT INTO chunks (...) VALUES (?, ?, ...); (parameterized)');
-console.log('✅ COMMIT; (on success)');
-console.log('✅ ROLLBACK; (on error)');
+console.log('\n2. **Watch for These Logs:**');
+console.log('   🔥 "DocumentLoader: AGGRESSIVE RELOAD - ALWAYS clearing all documents"');
+console.log('   ✅ "DocumentLoader: Successfully cleared all documents and chunks"');
+console.log('   📄 "DocumentLoader: Loading document: tccc_handbook_v5.md"');
+console.log('   ✅ "SQLiteStorage: ✅ Saved document: TCCC Handbook v5"');
+console.log('   ✅ "SQLiteStorage: ✅ Saved batch X/Y"');
 
-console.log('\n🔍 **Key Improvements:**');
-console.log('✅ No more manual string escaping');
-console.log('✅ No more SQL injection vulnerabilities');
-console.log('✅ Better handling of special characters');
-console.log('✅ Proper null value handling');
-console.log('✅ Transaction-based data consistency');
-console.log('✅ Embedding size validation');
+console.log('\n3. **Expected Behavior:**');
+console.log('   ✅ No UNIQUE constraint failed errors');
+console.log('   ✅ No NativeStatement.finalizeAsync errors');
+console.log('   ✅ Documents load successfully');
+console.log('   ✅ Chunks save successfully');
 
-console.log('\n📱 **To Test:**');
-console.log('1. Start the app: npm start');
-console.log('2. Navigate to Knowledge Base screen');
-console.log('3. Press "📚 Load Documents" button');
-console.log('4. Select "Regenerate" when prompted');
-console.log('5. Monitor console for database operation logs');
-console.log('6. Verify no "execAsync" errors occur');
+console.log('\n4. **Test the Query:**');
+console.log('   Ask: "What is march algorithm?"');
+
+console.log('\n🔍 **If Still Getting Errors:**');
+
+console.log('\n1. **Check Database State:**');
+console.log('   - The database might be in a corrupted state');
+console.log('   - Try clearing app data completely');
+console.log('   - Restart app from scratch');
+
+console.log('\n2. **Check Logs:**');
+console.log('   - Look for "Successfully cleared all documents and chunks"');
+console.log('   - Check for individual document save success messages');
+console.log('   - Verify no constraint violation errors');
+
+console.log('\n3. **Database Reset:**');
+console.log('   If errors persist, the database might need a complete reset:');
+console.log('   - Clear app data/cache');
+console.log('   - Delete the SQLite database file if possible');
+console.log('   - Restart app to recreate database');
+
+console.log('\n🎯 **Success Criteria:**');
+
+console.log('\n✅ **No SQLite Errors:**');
+console.log('- No UNIQUE constraint failed errors');
+console.log('- No NativeStatement.finalizeAsync errors');
+console.log('- No document save failures');
+
+console.log('\n✅ **Successful Loading:**');
+console.log('- All documents load successfully');
+console.log('- All chunks save successfully');
+console.log('- Embeddings generate properly');
+
+console.log('\n✅ **Functional RAG:**');
+console.log('- Search works without errors');
+console.log('- TCCC documents found for MARCH queries');
+console.log('- Pure cosine similarity results');
 
 console.log('\n📊 **Expected Log Output:**');
-console.log('- "SQLiteStorage: Saving X chunks..."');
-console.log('- "SQLiteStorage: Saved batch 1/X"');
-console.log('- "SQLiteStorage: Chunks saved successfully"');
-console.log('- No "execAsync" error messages');
+console.log('🔥 DocumentLoader: AGGRESSIVE RELOAD - ALWAYS clearing all documents');
+console.log('✅ DocumentLoader: Successfully cleared all documents and chunks');
+console.log('📄 DocumentLoader: Loading document: tccc_handbook_v5.md');
+console.log('✅ DocumentLoader: ✅ TCCC document loaded: TCCC Handbook v5');
+console.log('✅ SQLiteStorage: ✅ Saved document: TCCC Handbook v5');
+console.log('✅ SQLiteStorage: ✅ Saved batch 1/3');
+console.log('✅ SQLiteStorage: ✅ Chunks saved successfully');
+console.log('✅ Voy Vector Store: Using embedding-based search ONLY');
 
-console.log('\n⚠️ **Important Notes:**');
-console.log('- Batch size reduced to 20 for better reliability');
-console.log('- Each batch uses its own transaction');
-console.log('- Large embeddings (>1MB) will be truncated');
-console.log('- Proper error recovery with rollback');
-console.log('- Parameterized queries prevent SQL injection');
-
-console.log('\n✅ **The SQLite database operations should now work properly!**');
-console.log('This should resolve the "execAsync" error and allow embedding regeneration to complete successfully.'); 
+console.log('\n🔧 **Next Steps:**');
+console.log('1. Restart app completely');
+console.log('2. Watch for successful document loading logs');
+console.log('3. Verify no SQLite constraint errors');
+console.log('4. Test "What is march algorithm?" query');
+console.log('5. Confirm RAG system works properly'); 

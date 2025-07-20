@@ -23,7 +23,7 @@ export class VoyRAG {
 
   constructor() {
     this.llmService = new LLMService();
-    this.voyVectorStore = new VoyVectorStore();
+    this.voyVectorStore = VoyVectorStore.getInstance();
     this.settings = ModelSettingsService.getInstance();
     
     // Set up settings change listener
@@ -66,19 +66,65 @@ export class VoyRAG {
     }
   }
 
+  // Main query method (public API)
+  async query(query: string): Promise<string> {
+    const startTime = Date.now();
+    console.log(`🔍 VoyRAG: Starting query processing for: "${query}"`);
+    
+    try {
+      console.log(`📊 VoyRAG: Step 1 - Processing query with full RAG pipeline...`);
+      const response = await this.processQuery(query);
+      
+      const totalTime = Date.now() - startTime;
+      console.log(`⚡ VoyRAG: Query completed in ${totalTime}ms`);
+      console.log(`📝 VoyRAG: Response preview: "${response.text.substring(0, 150)}..."`);
+      console.log(`📊 VoyRAG: Stats - Model: ${response.modelUsed}, Chunks: ${response.chunkCount}, Confidence: ${response.confidence.toFixed(2)}`);
+      
+      return response.text;
+    } catch (error) {
+      const totalTime = Date.now() - startTime;
+      console.error(`❌ VoyRAG: Query failed after ${totalTime}ms:`, error);
+      console.error(`❌ VoyRAG: Error details:`, {
+        name: error.name,
+        message: error.message,
+        stack: error.stack?.substring(0, 300)
+      });
+      return 'Sorry, I encountered an error processing your query. Please try again.';
+    }
+  }
+
   async processQuery(query: string): Promise<VoyRAGResponse> {
     const startTime = Date.now();
     
     try {
-      console.log('Processing query with Voy RAG:', query);
+      console.log(`🔍 VoyRAG: Processing query: "${query}"`);
+      
+      console.log(`📚 VoyRAG: Step 2 - Searching vector store for relevant chunks...`);
+      const searchStartTime = Date.now();
       
       // Use Voy VectorStore to find relevant chunks
       const relevantChunks = await this.voyVectorStore.searchDocuments(query, 3);
       
+      const searchTime = Date.now() - searchStartTime;
+      console.log(`⏱️ VoyRAG: Vector search completed in ${searchTime}ms`);
+      console.log(`📊 VoyRAG: Found ${relevantChunks.length} relevant chunks`);
+      
       // Debug: Check LLM service status
-      console.log('Voy RAG: Checking LLM service status...');
-      console.log('Voy RAG: LLM service ready:', this.llmService.isModelReady());
-      console.log('Voy RAG: LLM service info:', this.llmService.getModelInfo());
+      console.log(`🤖 VoyRAG: Step 3 - Checking LLM service status...`);
+      const llmReady = this.llmService.isModelReady();
+      const llmInfo = this.llmService.getModelInfo();
+      console.log(`🤖 VoyRAG: LLM service ready: ${llmReady}`);
+      console.log(`🤖 VoyRAG: LLM service info:`, llmInfo);
+      
+      // Log chunk details for debugging
+      if (relevantChunks.length > 0) {
+        console.log(`📄 VoyRAG: Chunk details:`);
+        relevantChunks.forEach((chunk, i) => {
+          const similarity = chunk.metadata.similarityScore || 0;
+          console.log(`   ${i + 1}. Doc: ${chunk.documentId}, Similarity: ${similarity.toFixed(4)}`);
+          console.log(`      Content: "${chunk.content.substring(0, 100)}..."`);
+        });
+      }
       
       // If no relevant chunks found, try using LLM directly
       if (relevantChunks.length === 0) {
@@ -132,10 +178,19 @@ export class VoyRAG {
       const searchEngine = this.determineSearchEngine(relevantChunks);
       
       // Try LLM service first
-      if (this.llmService.isModelReady()) {
+      console.log(`🤖 VoyRAG: Step 4 - Response generation...`);
+      
+      if (llmReady) {
         try {
-          console.log('Voy RAG: Using LLM service for response generation');
+          console.log(`🤖 VoyRAG: Using LLM service for enhanced response generation`);
+          console.log(`📝 VoyRAG: Context length: ${context.length} characters`);
+          
+          const llmStartTime = Date.now();
           const llmResponse = await this.llmService.generateResponse(query, context);
+          const llmTime = Date.now() - llmStartTime;
+          
+          console.log(`⚡ VoyRAG: LLM response generated in ${llmTime}ms`);
+          console.log(`📝 VoyRAG: LLM response preview: "${llmResponse.text.substring(0, 100)}..."`);
           
           return {
             text: llmResponse.text,
@@ -150,14 +205,22 @@ export class VoyRAG {
             searchEngine
           };
         } catch (error) {
-          console.warn('Enhanced LLM failed, falling back to Voy search:', error);
+          console.error(`❌ VoyRAG: Enhanced LLM failed, falling back to chunk-based response:`, error);
         }
       } else {
-        console.log('Voy RAG: LLM service not ready, using fallback response generation');
+        console.log(`⚠️ VoyRAG: LLM service not ready, using chunk-based fallback response generation`);
       }
       
       // Fallback to Voy-based response generation
+      console.log(`📝 VoyRAG: Step 5 - Generating fallback response from ${relevantChunks.length} chunks...`);
+      const fallbackStartTime = Date.now();
+      
       const response = this.generateResponseFromChunks(query, relevantChunks);
+      
+      const fallbackTime = Date.now() - fallbackStartTime;
+      console.log(`⚡ VoyRAG: Fallback response generated in ${fallbackTime}ms`);
+      console.log(`📝 VoyRAG: Fallback response preview: "${response.substring(0, 100)}..."`);
+      console.log(`📊 VoyRAG: Using max similarity: ${Math.max(...similarityScores).toFixed(4)} for confidence`);
       
       return {
         text: response,

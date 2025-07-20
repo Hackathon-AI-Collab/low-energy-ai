@@ -47,9 +47,13 @@ fi
 print_status "Step 4: Installing dependencies..."
 bun install
 
-# --- Step 5: Build and Run ---
-print_status "Step 5: Building and running the Android app..."
-print_warning "This may take several minutes, as Gradle might download the correct NDK version..."
+# --- Step 5: Clear Metro Cache ---
+print_status "Step 5: Clearing Metro cache for fresh document loading..."
+rm -rf node_modules/.cache
+print_success "Metro cache cleared."
+
+# --- Step 6: Build and Run ---
+print_status "Step 6: Building and running the Android app with document loading fixes..."
 npx expo run:android
 
 print_success "Build script completed!"

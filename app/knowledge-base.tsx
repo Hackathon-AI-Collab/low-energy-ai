@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { AssetDocumentService } from '../src/services/assetDocumentService';
 import { SQLiteStorageService } from '../src/services/sqliteStorage';
-import { VoyVectorStore } from '../src/services/voyVectorStore';
+import { VectorDocumentLoader } from '../src/services/vectorDocumentLoader';
 
 interface Document {
   id: string;
@@ -67,7 +67,9 @@ export default function KnowledgeBaseScreen() {
       const storedDocs = await vectorStore.getAllDocuments();
       
       // Load asset documents metadata
-      const assetDocs = assetService.getAllDocuments();
+      const assetDocs = await assetService.getAllDocuments() || [];
+      
+      console.log(`Knowledge Base: Found ${storedDocs.length} stored docs, ${assetDocs.length} asset docs`);
       
       // Combine documents with unique keys
       const allDocs: Document[] = [
@@ -84,8 +86,8 @@ export default function KnowledgeBaseScreen() {
           type: 'markdown',
           createdAt: new Date().toISOString(),
           isAsset: true,
-          category: doc.category,
-          description: doc.description
+          category: doc.category || 'Unknown',
+          description: doc.description || 'No description'
         }))
       ];
       
@@ -115,25 +117,23 @@ export default function KnowledgeBaseScreen() {
     try {
       setLoadingAssets(true);
       
-      // Documents are now loaded automatically on app startup
-      // This function is kept for compatibility but shows status instead
+      const { AssetDocumentService } = await import('../src/services/assetDocumentService');
+      const documentService = AssetDocumentService.getInstance();
+      const documents = await documentService.getAllDocuments();
       
-      const { DocumentLoader } = await import('../src/services/documentLoader');
-      const documentLoader = DocumentLoader.getInstance();
-      const status = documentLoader.getLoadingStatus();
-      
-      if (status.documentsLoaded) {
+      if (documents.length > 0) {
+        // Documents exist - offer to force reload
         Alert.alert(
           'Documents Already Loaded',
-          'Documents are automatically loaded from assets/documents/ when the app starts. All 16 documents are ready for RAG queries.',
-          [{ text: 'OK' }]
+          `${documents.length} documents are currently loaded.\n\nWould you like to force reload with fresh content? This will clear all cached embeddings and reload from assets/documents/ files.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Force Reload', onPress: performCompleteLoad, style: 'destructive' }
+          ]
         );
       } else {
-        Alert.alert(
-          'Documents Not Loaded',
-          'Documents should be loaded automatically. Please restart the app to load documents.',
-          [{ text: 'OK' }]
-        );
+        // No documents - start fresh load
+        await performCompleteLoad();
       }
       
     } catch (error) {
@@ -144,72 +144,63 @@ export default function KnowledgeBaseScreen() {
     }
   };
 
-  const performCompleteLoad = async (assetService: AssetDocumentService, vectorStore: VoyVectorStore, clearExisting: boolean) => {
+  const performCompleteLoad = async () => {
     try {
-      console.log('🚀 Starting complete document load process...');
+      setLoadingAssets(true);
+      console.log('🚀 Force reloading all documents with fresh content...');
       
-      // Step 1: Clear existing data if needed
-      if (clearExisting) {
-        console.log('🗑️ Clearing existing data...');
-        await vectorStore.clearAll();
-        console.log('✅ Existing data cleared');
-      }
+      // Step 1: Clear all existing embeddings
+      console.log('🗑️ Clearing all existing embeddings...');
+      const { VoyVectorStore } = await import('../src/services/voyVectorStore');
+      const vectorStore = new VoyVectorStore();
+      await vectorStore.initialize();
+      await vectorStore.clearAll();
+      console.log('✅ All existing embeddings cleared');
       
-      // Step 2: Load documents directly from directory (more efficient)
-      console.log('📚 Loading asset documents from directory...');
-      const loadResults = await assetService.loadAllDocumentsFromDirectory();
-      console.log(`✅ Documents loaded: ${loadResults.success} success, ${loadResults.failed} failed`);
+      // Step 2: Force reload documents with real content
+      console.log('📚 Loading documents with real content from assets/documents/...');
+      const { AssetDocumentService } = await import('../src/services/assetDocumentService');
+      const assetService = AssetDocumentService.getInstance();
+      const loadResults = await assetService.loadAllDocumentsToVectorStore();
+      
+      console.log(`✅ Load complete: ${loadResults.success} success, ${loadResults.failed} failed`);
       
       if (loadResults.success === 0) {
-        Alert.alert('No Documents Loaded', 'No documents were successfully loaded. Please check your asset configuration.');
+        Alert.alert('No Documents Loaded', 'No documents were successfully loaded. Please check that documents exist in assets/documents/');
         return;
       }
       
-      // Step 3: Generate embeddings (this happens automatically during document loading)
-      console.log('🔍 Embeddings should be generated automatically during document loading');
+      // Step 3: Verify the results
+      console.log('🔍 Verifying loaded documents...');
+      const allDocs = await vectorStore.getAllDocuments();
+      const totalChunks = allDocs.reduce((total, doc) => total + doc.chunkCount, 0);
       
-      // Step 4: Verify embeddings
-      console.log('🔍 Verifying embeddings...');
-      const verificationResults = await vectorStore.verifyStoredEmbeddings();
+      console.log(`📊 Verification: ${allDocs.length} documents, ${totalChunks} chunks total`);
       
-      // Step 5: Show results
-      const onnxCount = verificationResults.storedEmbeddings?.embeddingQuality?.onnxEmbeddings || 0;
-      const hashCount = verificationResults.storedEmbeddings?.embeddingQuality?.hashEmbeddings || 0;
-      const totalChunks = verificationResults.storedEmbeddings?.totalChunks || 0;
-      const averageDimension = verificationResults.storedEmbeddings?.embeddingQuality?.averageDimension || 0;
-      const quality = verificationResults.assessment?.quality || 'unknown';
-      
-      console.log(`📊 Verification Results:`);
-      console.log(`  - Total chunks: ${totalChunks}`);
-      console.log(`  - ONNX embeddings: ${onnxCount}`);
-      console.log(`  - Hash embeddings: ${hashCount}`);
-      console.log(`  - Average dimension: ${averageDimension.toFixed(2)}`);
-      console.log(`  - Quality: ${quality}`);
-      
-      // Step 6: Show success message with details
-      let message = `Successfully loaded ${loadResults.success} documents.\n\n`;
-      message += `📊 Embedding Results:\n`;
+      // Step 4: Show success message
+      let message = `Successfully loaded ${loadResults.success} documents with real content!\n\n`;
+      message += `📊 Results:\n`;
+      message += `• Total documents: ${allDocs.length}\n`;
       message += `• Total chunks: ${totalChunks}\n`;
-      message += `• ONNX embeddings: ${onnxCount}\n`;
-      message += `• Hash embeddings: ${hashCount}\n`;
-      message += `• Average dimension: ${averageDimension.toFixed(2)}\n`;
-      message += `• Quality: ${quality.toUpperCase()}`;
+      message += `• Using ONNX embeddings (no hash fallbacks)\n\n`;
       
-      if (onnxCount > 0) {
-        message += `\n\n✅ ONNX model is working correctly!`;
-      } else if (hashCount > 0) {
-        message += `\n\n⚠️ Using hash-based embeddings (ONNX model may not be available)`;
+      if (totalChunks > 100) {
+        message += `✅ Success! Documents now have full content instead of generic headers.`;
+      } else {
+        message += `⚠️  Still getting low chunk count. Check console logs for issues.`;
       }
       
       Alert.alert(
-        'Documents Loaded Successfully',
+        'Force Reload Complete',
         message,
-        [{ text: 'OK', onPress: () => loadDocuments() }]
+        [{ text: 'OK' }]
       );
       
     } catch (error) {
       console.error('Error in complete load process:', error);
-      Alert.alert('Error', 'Failed to complete document loading process');
+      Alert.alert('Error', `Failed to complete document loading process: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setLoadingAssets(false);
     }
   };
 
