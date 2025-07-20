@@ -321,7 +321,8 @@ export class VoyVectorStore {
   async getAllDocuments(): Promise<DocumentMetadata[]> {
     try {
       await this.ensureInitialized();
-      return Array.from(this.documents.values()).sort((a, b) => b.importance - a.importance);
+      // Pure RAG - no importance-based sorting, return in document order
+      return Array.from(this.documents.values());
     } catch (error) {
       console.error('Voy Vector Store: Failed to get all documents:', error);
       return [];
@@ -631,86 +632,16 @@ export class VoyVectorStore {
     return hash.toString(16);
   }
 
+  // Pure RAG approach - no hardcoded importance scoring
+  // Let the embedding model and cosine similarity do the work
   private calculateImportance(content: string): number {
-    const lowerContent = content.toLowerCase();
-    
-    // Medical and emergency keywords with weights
-    const keywordWeights: { [key: string]: number } = {
-      // TCCC and MARCH specific keywords (highest weight)
-      'march algorithm': 10,
-      'tccc': 8,
-      'tactical combat casualty care': 8,
-      'massive hemorrhage': 7,
-      'tourniquet': 6,
-      'hemostatic': 6,
-      'airway': 6,
-      'respiration': 6,
-      'circulation': 6,
-      'hypothermia': 6,
-      'head injury': 6,
-      
-      // Medical procedure keywords
-      'algorithm': 5,
-      'protocol': 5,
-      'procedure': 5,
-      'treatment': 5,
-      'assessment': 5,
-      'intervention': 5,
-      
-      // Emergency response keywords
-      'emergency': 4,
-      'trauma': 4,
-      'casualty': 4,
-      'rescue': 4,
-      'incident': 4,
-      'response': 4,
-      
-      // Medical terms
-      'medical': 3,
-      'health': 3,
-      'care': 3,
-      'patient': 3,
-      'clinical': 3,
-      
-      // General importance based on content length and structure
-      'what is': 4,
-      'how to': 4,
-      'steps': 4,
-      'guidelines': 4,
-      'standards': 4
-    };
-    
-    let score = 0;
-    
-    // Calculate base score from content length (normalized)
-    const lengthScore = Math.min(content.length / 200, 3); // Max 3 points for length
-    score += lengthScore;
-    
-    // Calculate keyword score
-    for (const [keyword, weight] of Object.entries(keywordWeights)) {
-      if (lowerContent.includes(keyword)) {
-        score += weight;
-      }
-    }
-    
-    // Bonus for chunks that contain question-answer patterns
-    if (lowerContent.includes('what is') && lowerContent.includes('algorithm')) {
-      score += 5; // High bonus for question-answer about algorithms
-    }
-    
-    // Bonus for chunks that contain structured content (lists, steps)
-    if (lowerContent.includes('-') || lowerContent.includes('1.') || lowerContent.includes('step')) {
-      score += 2;
-    }
-    
-    // Bonus for chunks that contain definitions or explanations
-    if (lowerContent.includes('is a') || lowerContent.includes('means') || lowerContent.includes('refers to')) {
-      score += 2;
-    }
-    
-    // Cap the score at 20
-    return Math.min(score, 20);
+    return 1.0; // Neutral importance, let semantic search handle relevance
   }
+
+  // Remove the helper methods - no longer needed for pure RAG
+  // private calculateKeywordScore(content: string): number { ... }
+  // private calculateStructuralScore(content: string): number { ... }
+  // private calculateSemanticScore(content: string): number { ... }
 
   private chunkContent(content: string, documentId: string): DocumentChunk[] {
     console.log('📄 Voy Vector Store: Starting document chunking...');
