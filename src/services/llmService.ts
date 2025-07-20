@@ -92,9 +92,9 @@ export class LLMService {
   constructor() {
     this.settings = ModelSettingsService.getInstance();
     this.config = {
-      maxNewTokens: 128,
-      temperature: 0.7,
-      topP: 0.9,
+      maxNewTokens: 512, // Increased for better responses
+      temperature: 0.3,  // Lower for faster, more focused responses
+      topP: 0.85,        // Slightly lower for speed
     };
     this.settingsCallback = this.handleSettingsChange.bind(this);
     this.settings.addSettingsChangeCallback(this.settingsCallback);
@@ -206,19 +206,26 @@ export class LLMService {
         throw new Error('Invalid prompt: must be a non-empty string');
       }
 
-      console.log('LLM Service: Attempting completion with prompt length:', fullPrompt.length);
-      console.log('LLM Service: Prompt preview:', fullPrompt.substring(0, 100) + '...');
+      // Debug: Print complete prompt being sent to LLM
+      console.log(`🚀 LLM: Generating response (${fullPrompt.length} chars)`);
+      console.log('📝 COMPLETE PROMPT DEBUG:');
+      console.log('='.repeat(80));
+      console.log(fullPrompt);
+      console.log('='.repeat(80));
 
       const params = {
         prompt: fullPrompt,
         n_predict: this.config.maxNewTokens,
         temperature: this.config.temperature,
         top_p: this.config.topP,
+        // Performance optimizations
+        n_threads: 4,           // Use multiple threads
+        repeat_penalty: 1.1,    // Reduce repetition
+        n_batch: 8,            // Process tokens in batches
       };
 
-      console.log('LLM Service: Calling completion with params:', JSON.stringify(params));
+      console.log('⚙️ LLM Parameters:', JSON.stringify(params, null, 2));
       const result = await this.llamaContext.completion(params);
-      console.log('LLM Service: Full response from model:', JSON.stringify(result, null, 2));
 
       const generatedText = result.text.trim();
       const processingTime = Date.now() - startTime;
@@ -240,12 +247,56 @@ export class LLMService {
   }
 
   private constructPrompt(prompt: string, context?: string): string {
-    // Simplify the prompt to avoid potential issues
+    // Clean and normalize input text
+    const cleanPrompt = this.normalizeWhitespace(prompt);
+    
     if (context) {
-      return `Context: ${context}\n\nQuestion: ${prompt}\n\nAnswer:`;
+      // Limit context length for faster processing
+      const maxContextLength = 2000;
+      const cleanContext = this.normalizeWhitespace(context);
+      const truncatedContext = cleanContext.length > maxContextLength 
+        ? cleanContext.substring(0, maxContextLength) + "..."
+        : cleanContext;
+      
+      // Optimized prompt format for Phi-3
+      const fullPrompt = `<|system|>You are a helpful medical and emergency response assistant. Use the provided context to answer questions accurately and concisely.<|end|>
+<|user|>Context: ${truncatedContext}
+
+Question: ${cleanPrompt}<|end|>
+<|assistant|>`;
+      
+      return this.normalizeWhitespace(fullPrompt);
     } else {
-      return `${prompt}\n\nAnswer:`;
+      const fullPrompt = `<|system|>You are a helpful assistant. Provide clear, concise answers.<|end|>
+<|user|>${cleanPrompt}<|end|>
+<|assistant|>`;
+      
+      return this.normalizeWhitespace(fullPrompt);
     }
+  }
+
+  private normalizeWhitespace(text: string): string {
+    return text
+      // Remove excessive dots/periods (table of contents artifacts)
+      .replace(/\.{4,}/g, '')
+      // Replace multiple spaces with single space
+      .replace(/[ \t]+/g, ' ')
+      // Replace multiple newlines with single newlines
+      .replace(/\n\s*\n\s*\n+/g, '\n\n')
+      // Remove trailing whitespace from lines
+      .replace(/[ \t]+$/gm, '')
+      // Remove leading whitespace from lines (except intentional indentation)
+      .replace(/^[ \t]+/gm, '')
+      // Remove lines that are mostly just dots or spacing artifacts
+      .replace(/^[.\s]*$/gm, '')
+      // Remove repeated question marks or other artifacts
+      .replace(/\?{2,}/g, '?')
+      // Clean up any remaining multiple spaces after all replacements
+      .replace(/[ \t]+/g, ' ')
+      // Clean up excessive newlines after processing
+      .replace(/\n\s*\n\s*\n+/g, '\n\n')
+      // Trim start and end
+      .trim();
   }
 
   private generateSimulatedResponse(prompt: string, context?: string): Promise<LLMResponse> {

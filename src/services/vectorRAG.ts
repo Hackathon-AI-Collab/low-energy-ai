@@ -132,8 +132,9 @@ export class VectorRAG {
           documentsReferenced.push(result.chunk.document_id);
         }
 
-        // Format context with document reference
-        const contextPart = `Document: ${result.chunk.document_id}\nContent: ${result.chunk.content}`;
+        // Clean and format context with document reference
+        const cleanContent = this.cleanChunkContent(result.chunk.content);
+        const contextPart = `Document: ${result.chunk.document_id}\nContent: ${cleanContent}`;
         contextParts.push(contextPart);
       }
 
@@ -195,6 +196,25 @@ export class VectorRAG {
       embeddingModel: 'all-MiniLM-L6-v2',
       searchEngine: 'sqlite-vec'
     };
+  }
+
+  private cleanChunkContent(content: string): string {
+    return content
+      // Remove excessive dots/periods (table of contents artifacts)
+      .replace(/\.{4,}/g, '')
+      // Remove lines with mostly dots and spaces
+      .replace(/^[.\s]+$/gm, '')
+      // Replace multiple spaces with single space
+      .replace(/[ \t]+/g, ' ')
+      // Replace multiple newlines with max 2 newlines
+      .replace(/\n\s*\n\s*\n+/g, '\n\n')
+      // Remove trailing whitespace from lines
+      .replace(/[ \t]+$/gm, '')
+      // Remove leading whitespace from lines
+      .replace(/^[ \t]+/gm, '')
+      // Limit to reasonable length for context
+      .substring(0, 500)
+      .trim();
   }
 
   private calculateConfidence(similarityScores: number[]): number {
