@@ -54,6 +54,7 @@ print_success "Metro cache cleared."
 
 # --- Step 6: Build and Run ---
 print_status "Step 6: Building and running the Android app with document loading fixes..."
+
 npx expo run:android
 
 print_success "Build script completed!"

@@ -9,10 +9,10 @@ export interface PermissionStatus {
 
 export class BluetoothPermissionService {
   private static instance: BluetoothPermissionService | null = null;
-  private bleManager: BleManager;
+  private bleManager: BleManager | null = null;
 
   constructor() {
-    this.bleManager = new BleManager();
+    // Don't create BLE manager in constructor - will be set externally
   }
 
   static getInstance(): BluetoothPermissionService {
@@ -24,6 +24,15 @@ export class BluetoothPermissionService {
 
   async checkPermissions(): Promise<PermissionStatus> {
     try {
+      if (!this.bleManager) {
+        console.warn('BLE Manager not initialized');
+        return {
+          bluetooth: false,
+          location: false,
+          allGranted: false
+        };
+      }
+
       const state = await this.bleManager.state();
       
       // Check if Bluetooth is authorized and powered on
@@ -69,6 +78,15 @@ export class BluetoothPermissionService {
 
   async requestPermissions(): Promise<PermissionStatus> {
     try {
+      if (!this.bleManager) {
+        console.warn('BLE Manager not initialized');
+        return {
+          bluetooth: false,
+          location: false,
+          allGranted: false
+        };
+      }
+
       // Check current BLE state first
       const currentState = await this.bleManager.state();
       
@@ -220,7 +238,18 @@ export class BluetoothPermissionService {
     return true;
   }
 
+  setBleManager(bleManager: BleManager): void {
+    this.bleManager = bleManager;
+  }
+
+  getBleManager(): BleManager | null {
+    return this.bleManager;
+  }
+
   destroy(): void {
-    this.bleManager.destroy();
+    if (this.bleManager) {
+      this.bleManager.destroy();
+      this.bleManager = null;
+    }
   }
 } 

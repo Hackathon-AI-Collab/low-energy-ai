@@ -2,7 +2,9 @@ import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { Link } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { BleManager } from 'react-native-ble-plx';
+import DeviceSelectionCard from '../src/components/DeviceSelectionCard';
 import ModelSelectionCard from '../src/components/ModelSelectionCard';
 import { BluetoothPermissionService } from '../src/services/bluetoothPermissionService';
 import { ConnectionStatus, DeviceInfo, DeviceRole, DistributedLLMService, LLMResponse } from '../src/services/distributedLLMService';
@@ -24,7 +26,7 @@ export default function SettingsScreen() {
   const [testQuery, setTestQuery] = useState('');
   const [testResponse, setTestResponse] = useState<LLMResponse | null>(null);
   const [isQuerying, setIsQuerying] = useState(false);
-  const [deviceName, setDeviceName] = useState('LEAI Phone');
+  const [deviceName, setDeviceName] = useState('Rufaydah Phone');
   const [permissionStatus, setPermissionStatus] = useState<{ bluetooth: boolean; location: boolean; allGranted: boolean }>({
     bluetooth: false,
     location: false,
@@ -36,13 +38,14 @@ export default function SettingsScreen() {
     const initService = async () => {
       try {
         const service = DistributedLLMService.getInstance({
-          deviceName,
-          role: currentRole,
+          deviceName: 'RUFI Phone',
+          role: DeviceRole.CONSUMER,
           modelName: 'phi3',
         });
 
         // Set up event handlers
         service.setOnDeviceDiscovered((device) => {
+          console.log(`📱 Settings: Device discovered: ${device.name} (${device.id})`);
           setDiscoveredDevices(prev => {
             const existing = prev.find(d => d.id === device.id);
             if (existing) {
@@ -79,46 +82,75 @@ export default function SettingsScreen() {
     initService();
 
     return () => {
+      // Don't destroy the service when leaving settings - the main app needs it
+      // Just clean up event handlers to avoid memory leaks
       if (distributedLLM) {
-        distributedLLM.destroy();
+        distributedLLM.setOnDeviceDiscovered(() => {});
+        distributedLLM.setOnDeviceConnected(() => {});
+        distributedLLM.setOnDeviceDisconnected(() => {});
+        distributedLLM.setOnStatusChanged(() => {});
       }
+      // Don't destroy the shared BLE manager either - let the main app manage it
     };
-  }, [currentRole, deviceName]);
+  }, []);
 
   // Check permissions on mount
   useEffect(() => {
     const checkPermissions = async () => {
-      const permissionService = BluetoothPermissionService.getInstance();
-      const status = await permissionService.checkPermissions();
-      setPermissionStatus(status);
+      try {
+        // Create a BLE manager that will be shared
+        const bleManager = new BleManager();
+        const permissionService = BluetoothPermissionService.getInstance();
+        permissionService.setBleManager(bleManager);
+        
+        const status = await permissionService.checkPermissions();
+        setPermissionStatus(status);
+        
+        // Don't destroy the manager - let DistributedLLMService use it
+        // The manager will be properly cleaned up when the service is destroyed
+      } catch (error) {
+        console.error('Error checking permissions:', error);
+        setPermissionStatus({
+          bluetooth: false,
+          location: false,
+          allGranted: false
+        });
+      }
     };
     checkPermissions();
   }, []);
 
   // Handle role change
   const handleRoleChange = useCallback(async (newRole: DeviceRole) => {
-    if (distributedLLM) {
-      distributedLLM.destroy();
-    }
-
+    // Don't destroy the service, just clear the current state
+    // The service should persist across role changes
     setCurrentRole(newRole);
     setDiscoveredDevices([]);
     setConnectedDevices([]);
     setConnectionStatus(ConnectionStatus.DISCONNECTED);
-  }, [distributedLLM]);
+  }, []);
 
   // Start/stop scanning
   const toggleScanning = useCallback(async () => {
     if (!distributedLLM) return;
 
     if (isScanning) {
+      console.log('🛑 Stopping BLE scan...');
       setIsScanning(false);
+      // Manually stop scanning
+      try {
+        distributedLLM.stopScanning?.();
+      } catch (error) {
+        console.error('Error stopping scan:', error);
+      }
     } else {
+      console.log('🔍 Starting BLE scan...');
       setIsScanning(true);
       setDiscoveredDevices([]);
       
       try {
         await distributedLLM.initialize();
+        console.log('✅ BLE scan started successfully');
       } catch (error) {
         console.error('Failed to start scanning:', error);
         setIsScanning(false);
@@ -384,43 +416,30 @@ export default function SettingsScreen() {
           <>
             
 
-            {/* Discovered Devices */}
-            {discoveredDevices.length > 0 && (
+            {/* Scanning Status */}
+            {isScanning && (
               <View style={styles.settingCard(themeColors)}>
-                <Text style={styles.settingTitle(themeColors)}>Discovered Providers ({discoveredDevices.length})</Text>
-                {discoveredDevices.map((device) => (
-                  <TouchableOpacity
-                    key={device.id}
-                    style={styles.deviceItem}
-                    onPress={() => connectToDevice(device.id)}
-                  >
-                    <View style={styles.deviceInfo}>
-                      <Text style={styles.deviceName}>{device.name}</Text>
-                      <Text style={styles.deviceStatus}>{device.status}</Text>
-                    </View>
-                    <Text style={styles.connectText}>Connect</Text>
-                  </TouchableOpacity>
-                ))}
+                <Text style={styles.settingTitle(themeColors)}>Scanning Status</Text>
+                <Text style={styles.settingDescription(themeColors)}>
+                  {discoveredDevices.length > 0 
+                    ? `Found ${discoveredDevices.length} device(s)` 
+                    : 'Searching for nearby devices...'}
+                </Text>
+                <ActivityIndicator size="small" color={themeColors.tint} style={{marginTop: 8}} />
               </View>
             )}
 
-            {/* Connected Devices */}
-            {connectedDevices.length > 0 && (
-              <View style={styles.settingCard(themeColors)}>
-                <Text style={styles.settingTitle(themeColors)}>Connected Providers ({connectedDevices.length})</Text>
-                {connectedDevices.map((device) => (
-                  <View key={device.id} style={styles.deviceItem}>
-                    <View style={styles.deviceInfo}>
-                      <Text style={styles.deviceName}>{device.name}</Text>
-                      <Text style={styles.deviceStatus}>{device.status}</Text>
-                    </View>
-                    <TouchableOpacity onPress={() => disconnectFromDevice(device.id)}>
-                      <Text style={styles.disconnectText}>Disconnect</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            )}
+            {/* Device Selection Card */}
+            <DeviceSelectionCard
+              title="Rufaydah Device Selection"
+              discoveredDevices={discoveredDevices}
+              connectedDevices={connectedDevices}
+              isScanning={isScanning}
+              onDeviceSelect={connectToDevice}
+              onDeviceDisconnect={disconnectFromDevice}
+              onStartScan={() => distributedLLM?.startScanning()}
+              onStopScan={() => distributedLLM?.stopScanning()}
+            />
 
             {/* Test Query */}
             {connectedDevices.length > 0 && (
@@ -696,37 +715,65 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
   }),
+  // Device selection styles (matching ModelSelectionCard)
+  settingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  settingValue: (themeColors) => ({
+    fontSize: 14,
+    color: themeColors.text,
+    opacity: 0.6,
+    marginBottom: 2,
+  }),
+  tapHint: (themeColors) => ({
+    fontSize: 12,
+    color: themeColors.tint,
+    fontStyle: 'italic',
+  }),
   deviceItem: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#eee',
-    borderRadius: 8,
-    marginBottom: 8,
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e9ecef',
   },
-  deviceInfo: {
+  deviceItemInfo: {
     flex: 1,
   },
-  deviceName: {
+  deviceItemName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: '#212529',
+    marginBottom: 2,
   },
-  deviceStatus: {
+  deviceItemId: {
     fontSize: 12,
-    color: '#007AFF',
-    marginTop: 2,
+    color: '#6c757d',
+    fontFamily: 'monospace',
+    marginBottom: 2,
   },
-  connectText: {
-    color: '#4CAF50',
-    fontSize: 14,
+  deviceItemStatus: {
+    fontSize: 12,
+    color: '#6c757d',
+  },
+  deviceItemModel: {
+    fontSize: 11,
+    color: '#007AFF',
     fontWeight: '500',
   },
-  disconnectText: {
-    color: '#FF3B30',
+  deviceItemAction: {
     fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '500',
+  },
+  deviceItemActionDisconnect: {
+    fontSize: 14,
+    color: '#FF3B30',
     fontWeight: '500',
   },
   testButton: {

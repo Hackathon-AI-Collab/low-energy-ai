@@ -1,8 +1,9 @@
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderHeight } from '@react-navigation/elements';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
@@ -17,6 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackgroundInitializationService, InitializationState } from '../src/services/backgroundInitializationService';
+import { DeviceRole, DistributedLLMService } from '../src/services/distributedLLMService';
 
 interface Message {
   id: string;
@@ -26,6 +28,8 @@ interface Message {
 }
 
 export default function ChatScreen() {
+  console.log('🚀 Main app: ChatScreen component rendered');
+  console.log('🚀 Main app: Component mount time:', new Date().toISOString());
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -33,6 +37,8 @@ export default function ChatScreen() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [initStatus, setInitStatus] = useState<string>('Starting up...');
   const [initProgress, setInitProgress] = useState<number>(0);
+  const [distributedLLM, setDistributedLLM] = useState<DistributedLLMService | null>(null);
+  const [connectedDevices, setConnectedDevices] = useState<any[]>([]);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
   const headerHeight = useHeaderHeight();
@@ -40,12 +46,79 @@ export default function ChatScreen() {
   const themeColors = Colors[colorScheme ?? 'light'];
 
   useEffect(() => {
+    console.log('🚀 Main app: useEffect triggered - calling initializeApp()');
     initializeApp();
+    
+    // Cleanup function
+    return () => {
+      console.log('🚀 Main app: useEffect cleanup - cleaning up event handlers');
+      if (distributedLLM) {
+        // Don't destroy the service, just clean up event handlers
+        distributedLLM.setOnDeviceConnected(() => {});
+        distributedLLM.setOnDeviceDisconnected(() => {});
+      }
+    };
   }, []);
+
+  // Add focus effect to detect when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log('🚀 Main app: Screen focused - checking for connected devices');
+      
+      // Re-check for connected devices when screen comes into focus
+      if (distributedLLM) {
+        const existingConnectedDevices = distributedLLM.getConnectedDevices();
+        console.log('🔍 Main app: Focus check - Found', existingConnectedDevices.length, 'connected devices');
+        if (existingConnectedDevices.length > 0) {
+          console.log('🔗 Focus check - Setting connected devices:', existingConnectedDevices.length);
+          setConnectedDevices(existingConnectedDevices);
+        }
+      }
+    }, [distributedLLM])
+  );
 
   const initializeApp = async () => {
     try {
+      console.log('🚀 Main app: initializeApp() called');
       console.log('Initializing RUFI app (lightweight startup)...');
+      
+      // Initialize distributed LLM service to check for connected workers
+      console.log('🚀 Main app: About to get DistributedLLM service instance...');
+      const dllm = DistributedLLMService.getInstance({
+        deviceName: 'RUFI Phone',
+        role: DeviceRole.CONSUMER,
+      });
+      console.log('🚀 Main app: Got DistributedLLM service instance');
+      setDistributedLLM(dllm);
+      
+      // Set up event handlers for connected devices
+      dllm.setOnDeviceConnected((device) => {
+        setConnectedDevices(prev => {
+          const existing = prev.find(d => d.id === device.id);
+          if (existing) {
+            return prev.map(d => d.id === device.id ? device : d);
+          }
+          return [...prev, device];
+        });
+      });
+
+      dllm.setOnDeviceDisconnected((deviceId) => {
+        setConnectedDevices(prev => prev.filter(d => d.id !== deviceId));
+      });
+      
+      // Check for existing connected devices
+      const existingConnectedDevices = dllm.getConnectedDevices();
+      console.log('🔍 Main app: Checking for existing connected devices...');
+      console.log('🔍 Main app: Found', existingConnectedDevices.length, 'connected devices');
+      if (existingConnectedDevices.length > 0) {
+        console.log('🔗 Found existing connected devices:', existingConnectedDevices.length);
+        existingConnectedDevices.forEach(device => {
+          console.log('🔗 Existing device:', device.name, '(', device.id, ')');
+        });
+        setConnectedDevices(existingConnectedDevices);
+      } else {
+        console.log('🔍 Main app: No existing connected devices found');
+      }
       
       // Quick startup - no heavy operations
       setIsInitialized(true);
@@ -54,7 +127,7 @@ export default function ChatScreen() {
       
       // Add welcome message immediately
       const welcomeMessage: Message = {
-        id: 'welcome',
+        id: `welcome_${Date.now()}`,
         text: 'Hello! I\'m RUFI, your intelligent emergency response assistant. I\'m initializing in the background - you can start chatting and I\'ll be ready shortly!',
         isUser: false,
         timestamp: new Date()
@@ -69,7 +142,7 @@ export default function ChatScreen() {
     } catch (error) {
       console.error('❌ Failed to quick initialize RUFI app:', error);
       const errorMessage: Message = {
-        id: 'error',
+        id: `error_${Date.now()}`,
         text: 'Sorry, I encountered an error during initialization. Limited functionality available.',
         isUser: false,
         timestamp: new Date()
@@ -115,7 +188,7 @@ export default function ChatScreen() {
       
       // Update welcome message
       const readyMessage: Message = {
-        id: 'ready',
+        id: `ready_${Date.now()}`,
         text: '✅ I\'m now fully initialized! I can help with emergency response protocols, medical guidelines, search and rescue procedures, and technical information using advanced AI-powered search.',
         isUser: false,
         timestamp: new Date()
@@ -152,11 +225,32 @@ export default function ChatScreen() {
     try {
       let response = '';
 
-      if (advancedRAG && initProgress >= 100) {
+      // First, try to use connected LEAI workers
+      if (connectedDevices.length > 0 && distributedLLM) {
+        try {
+          console.log('🤖 Using connected LEAI worker for query...');
+          console.log('🔗 Connected devices:', connectedDevices.length);
+          console.log('🔗 First device:', connectedDevices[0]);
+          const providerDevice = connectedDevices[0];
+          const llmResponse = await distributedLLM.queryWorker(providerDevice.id, inputText);
+          response = llmResponse.text || 'No response from LEAI worker';
+          console.log('✅ LEAI worker response received');
+        } catch (error) {
+          console.error('❌ LEAI worker query failed:', error);
+          response = 'LEAI worker unavailable, using local system...';
+        }
+      } else {
+        console.log('🔍 No LEAI workers available:');
+        console.log('  - Connected devices:', connectedDevices.length);
+        console.log('  - DistributedLLM service:', !!distributedLLM);
+      }
+
+      // Fallback to local RAG if no LEAI workers or query failed
+      if (!response && advancedRAG && initProgress >= 100) {
         // Use fully initialized RAG
         const ragResponse = await advancedRAG.query(inputText);
         response = ragResponse.text || 'No response generated';
-      } else if (advancedRAG) {
+      } else if (!response && advancedRAG) {
         // RAG available but may not be fully initialized
         try {
           const ragResponse = await advancedRAG.query(inputText);
@@ -164,7 +258,7 @@ export default function ChatScreen() {
         } catch (error) {
           response = `I'm still initializing (${Math.round(initProgress)}%). Please try again in a moment, or I can provide basic assistance.`;
         }
-      } else {
+      } else if (!response) {
         response = `I'm still starting up (${initStatus}). Please wait a moment for full functionality.`;
       }
 
@@ -247,7 +341,12 @@ export default function ChatScreen() {
             <View style={styles.headerText}>
               <Text style={[styles.headerTitle, { color: themeColors.text }]}>RUFI Assistant</Text>
               <Text style={[styles.headerSubtitle, { color: themeColors.tabIconDefault }]}>
-                {initProgress < 100 ? `${initStatus} (${initProgress}%)` : 'Ready'}
+                {connectedDevices.length > 0 
+                  ? `Ready (${connectedDevices.length} LEAI worker${connectedDevices.length > 1 ? 's' : ''} connected)`
+                  : initProgress < 100 
+                    ? `${initStatus} (${initProgress}%)` 
+                    : 'Ready (local mode)'
+                }
               </Text>
             </View>
           </View>
@@ -290,14 +389,19 @@ export default function ChatScreen() {
           <TouchableOpacity 
             onPress={handleSend}
             style={[styles.sendButton, { 
-              backgroundColor: inputText.trim() ? themeColors.tint : themeColors.tabIconDefault 
+              backgroundColor: inputText.trim() ? '#007AFF' : themeColors.tabIconDefault 
             }]}
             disabled={!inputText.trim() || isLoading}
           >
             {isLoading ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Text style={styles.sendButtonText}>Send</Text>
+              <Text style={[
+                styles.sendButtonText, 
+                { 
+                  color: inputText.trim() ? '#FFFFFF' : (colorScheme === 'dark' ? '#FFFFFF' : '#000000')
+                }
+              ]}>Send</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -471,7 +575,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   sendButtonText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.5,
