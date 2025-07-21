@@ -1,197 +1,194 @@
+#+TITLE: Rufaydah Platform - Distributed AI for Emergency Response
+#+AUTHOR: Khurram Baig
+#+DATE: 2024
 
-* Low-Energy AI (LEAI) Platform
+* Vision & Mission
 
-** 1. Vision & Mission
+** Vision
+To create a decentralized, resilient, and low-power AI platform that delivers critical knowledge and communication capabilities to individuals in the world's most challenging environments, including disaster zones and conflict areas.
 
-*Vision:* To create a decentralized, resilient, and low-power AI platform that delivers critical knowledge and communication capabilities to individuals in the world's most challenging environments, including disaster zones and conflict areas.
+** Mission
+To build a mobile-first application using React Native that provides distributed AI processing through Bluetooth Low Energy (BLE) connectivity, enabling mobile devices to access powerful AI models running on nearby computers while maintaining low power consumption and operational effectiveness in disconnected settings.
 
-*Mission:* To build a mobile-first application using *Expo* that runs an offline-capable Large Language Model (LLM) augmented by a dynamic, peer-to-peer synchronized knowledge base. The system will prioritize low power consumption, a minimal detection signature (via BLE), and operational effectiveness in disconnected settings.
+* The Problem
+In crisis zones, traditional connectivity infrastructure is often the first to fail. This isolates communities and first responders from critical information and AI-powered assistance when they need it most. Without a reliable way to connect people with knowledge and AI resources, response efforts are hampered, and lives are put at risk.
 
------
+* Our Solution: The Rufaydah AI Mesh Platform
+The Rufaydah platform is a decentralized, resilient, and low-power AI ecosystem designed for the world's most challenging environments. It establishes a peer-to-peer mesh network of devices that can share knowledge and access AI without relying on centralized infrastructure.
 
-** 2. Core Use Cases
+The core components are:
+- *Rufi Devices*: Local AI processing nodes running LLM models on cross-platform devices (Android, iOS, Laptops).
+- *RAG System*: A Retrieval-Augmented Generation pipeline provides context-aware responses from a local and shared knowledge base of critical documents.
+- *Bluetooth Mesh*: Peer-to-peer connectivity between Rufi devices enables a low-signature, infrastructure-free communication network.
 
-*** Primary (Information Retrieval)
-1.  *Field Medicine & Triage:* Provide immediate, authoritative medical guidance (e.g., TCCC) to medics and first responders.
-2.  *Search & Rescue:* Offer checklists and procedural guidance for complex operations like collapsed structure assessment.
-3.  *Technical Information:* Act as an interactive manual for equipment, pharmaceuticals, and other technical domains.
-4.  *Emergency Communication:* Encrypted messaging between team members with offline delivery.
-5.  *Situational Awareness:* Location-based information retrieval and offline mapping integration.
+* Core Use Cases
 
-*** Secondary (System & Network)
-6.  *Peer-to-Peer Knowledge Sync:* Automatically distribute updated knowledge base documents (e.g., new medical protocols) to nearby devices over BLE.
-7.  *Low-Signature Communication:* Use BLE for communication to reduce the risk of detection compared to Wi-Fi or cellular.
-8.  *Mesh Network Resilience:* Devices relay updates through intermediate nodes, creating redundant communication paths.
+** Primary (Distributed AI Processing)
+1. *Emergency Response AI:* Provide immediate, authoritative medical guidance (e.g., TCCC) to medics and first responders through distributed AI processing.
+2. *Field Intelligence:* Offer real-time analysis and procedural guidance for complex operations using powerful AI models.
+3. *Technical Information:* Act as an interactive manual for equipment, pharmaceuticals, and other technical domains with AI-powered responses.
 
------
+** Secondary (System & Network)
+4. *Distributed Computing:* Enable mobile devices to leverage powerful AI models running on nearby computers through BLE connectivity.
+5. *Low-Signature Communication:* Use BLE for device discovery and connection management to reduce detection risk compared to Wi-Fi or cellular.
 
-** 3. System Architecture
+* System Architecture
 
-The LEAI platform is designed as a modular application using the Expo framework. The architecture is broken down into four main layers: the *Application Layer*, the *Core Logic Layer*, the *Data & Sync Layer*, and the *Security Layer*.
+The Rufaydah platform is designed as a modular React Native application with distributed AI capabilities. The architecture consists of three main layers: the *Application Layer*, the *Distributed AI Layer*, and the *BLE Communication Layer*.
 
-LEAI Architecture Diagram
+** Application Layer (UI/UX)
 
-*** 3.1. Application Layer (UI/UX)
+- *Framework:* React Native with TypeScript
+- *UI Components:* Clean, intuitive chat-based interface with device management
+  - =ChatScreen=: Main interface for querying distributed AI models
+  - =SettingsScreen=: Device connection management and configuration
+  - =DeviceSelectionCard=: BLE device discovery and connection interface
+- *State Management:* Global state management for AI processing status, device connections, and user settings
 
-- *Framework:* Expo (React Native)
-- *Runtime & Bundler:* Bun
-- *Language:* TypeScript
-- *UI Components:* A simple, clean, and intuitive chat-based interface.
-  - =ChatScreen=: The main interface for querying the LLM.
-  - =KnowledgeBaseScreen=: Allows users to view and manage the documents in their local knowledge base.
-  - =SyncScreen=: Provides status on P2P synchronization and connected peers.
-  - =SettingsScreen=: For app configuration.
-  - =NetworkScreen=: Shows mesh network topology and device health.
-- *State Management:* Zustand for global state management, including LLM status, sync progress, and user settings.
+** Distributed AI Layer
 
-*** 3.2. Core Logic Layer (The "Brain")
+This layer handles distributed AI processing through BLE-connected workers.
 
-This layer is responsible for processing user queries and generating responses. It operates entirely offline.
-
-- *LLM Engine:*
-  - *Model:* A small, highly quantized, instruction-tuned model (e.g., =Phi-3-mini=, =Llama-3.1-8B=) converted to ONNX format for mobile optimization.
-  - *Runtime:* =onnxruntime-react-native= for native ONNX model inference with GPU acceleration support.
-  - *Fallback:* Cloud-based inference with local caching for critical queries when local model is unavailable.
+- *Distributed LLM Service:*
+  - *Primary Model:* phi3:mini running on remote computers via Ollama
+  - *Connection:* HTTP API calls to Ollama instances on worker devices
+  - *Fallback:* Local RAG system when no distributed workers are available
 - *RAG (Retrieval-Augmented Generation) Pipeline:*
-  1.  *User Query:* A user asks a question in the =ChatScreen=.
-  2.  *Embedding Generation:* The query is converted into a vector embedding using a lightweight, on-device sentence-transformer model.
-  3.  *Vector Search:* The query embedding is used to perform a similarity search against the *Vector Store*.
-  4.  *Context Retrieval:* The most relevant text chunks from the knowledge base are retrieved.
-  5.  *Prompt Augmentation:* The retrieved text chunks are combined with the original user query into a single, context-rich prompt.
-  6.  *LLM Inference:* The augmented prompt is sent to the LLM Engine, which generates a final, context-aware answer.
-  7.  *Response:* The answer is streamed back to the UI.
+  1. *Query Processing:* User queries are sent to connected AI workers
+  2. *Context Retrieval:* Local knowledge base provides relevant context
+  3. *Distributed Inference:* Remote AI models process queries with context
+  4. *Response Streaming:* AI responses are streamed back to the mobile device
 
-*** 3.3. Data & Sync Layer
+** BLE Communication Layer
 
-This layer manages the distributed knowledge base and handles peer-to-peer synchronization with conflict resolution.
+This layer manages device discovery and connection management.
 
-- *Knowledge Base:*
-  - *Storage:* Source documents (PDFs, Markdown files, etc.) are stored on the device's local filesystem using *=expo-file-system*=
-  - *Document Processing:* When a new document is added, it is parsed, chunked into smaller, manageable pieces, and converted into embeddings.
-  - *Document Lifecycle:* Implement document importance scoring, expiration dates, and archival for old protocols.
-- *Vector Store:*
-  - *Technology:* Hybrid approach using SQLite for metadata and FAISS compiled to WASM for vector operations.
-  - *Optimization:* Implement document chunking with overlap to maintain context across boundaries.
-- *Distributed Knowledge Management:*
-  - *Version Control:* Vector clocks for distributed versioning to handle concurrent updates.
-  - *Conflict Resolution:* Intelligent merging of concurrent document updates with user notification of conflicts.
-  - *Delta Synchronization:* Only transfer document chunks that have changed to minimize bandwidth usage.
-  - *Priority-based Sync:* Critical medical protocols sync first, reference materials second.
-- *P2P Synchronization:*
-  - *Protocol:* Bluetooth Low Energy (BLE) with mesh networking capabilities.
-  - *Library:* =react-native-ble-plx= (requires a custom development client).
-  - *Mechanism:*
-    1.  *Service & Characteristic:* A custom BLE service will be defined for LEAI. It will have characteristics for:
-        - =KNOWLEDGE_BASE_VERSION=: A hash or timestamp of the current knowledge base.
-        - =DOCUMENT_TRANSFER=: For sending and receiving document chunks.
-        - =NETWORK_TOPOLOGY=: For mesh network routing information.
-        - =DEVICE_HEALTH=: Battery level, storage space, sync frequency.
-    2.  *Advertising & Scanning:* Devices will advertise their =KNOWLEDGE_BASE_VERSION= and device health. In the background, the app will scan for other LEAI devices.
-    3.  *Sync Trigger:* When a device detects a peer with newer documents, it will initiate a connection.
-    4.  *Data Transfer:* The requesting device will ask for specific document chunks. Documents will be compressed, encrypted, and sent over the =DOCUMENT_TRANSFER= characteristic.
-    5.  *Mesh Routing:* Devices can relay updates through intermediate nodes to reach devices outside direct BLE range.
-    6.  *Integration:* Once received, new documents are verified, processed, and integrated into the local RAG pipeline.
+- *BLE Service:*
+  - *Service UUID:* Custom BLE service for device discovery
+  - *Characteristics:* Device information, connection status, and query routing
+- *Device Management:*
+  - *Advertising:* Worker devices advertise their AI model capabilities
+  - *Scanning:* Mobile devices scan for available AI workers
+  - *Connection:* Persistent BLE connections for device management
 
-*** 3.4. Security Layer
+* Architecture Benefits
 
-This layer ensures data integrity, confidentiality, and authenticity across the distributed network.
+- *Low Power:* BLE uses minimal power compared to Wi-Fi
+- *Low Detection:* BLE has minimal RF signature
+- *Distributed:* Leverages nearby computational resources
+- *Resilient:* Works offline with local knowledge base
+- *Scalable:* Multiple workers can serve multiple devices
 
-- *Cryptographic Security:*
-  - *Document Integrity:* SHA-256 hashes for document authenticity verification.
-  - *End-to-End Encryption:* AES-256 encryption for all BLE communications.
-  - *Key Management:* Device-specific keys with optional passphrase protection.
-- *Access Control:*
-  - *Document Permissions:* Role-based access to sensitive medical protocols.
-  - *Audit Trail:* Logging of document access and modifications.
-- *Operational Security:*
-  - *Low-Signature Operation:* Minimal BLE advertising to reduce detection risk.
-  - *Data Sanitization:* Automatic removal of sensitive metadata during sync.
+* Technology Stack
+The platform has evolved to optimize for performance and efficiency on resource-constrained devices.
 
------
+** LLM Runtime
+The system initially used an ONNX-based runtime, which suffered from poor performance on mobile. It was migrated to *Llama.rn*, which offers significantly better performance and faster inference times. The next iteration plans to use *MLC-LLM* for further speed and optimization gains.
 
-** 4. Enhanced Project Roadmap
+** Vector Storage & Search
+The RAG system's initial in-memory vector search (Voy) was too memory-intensive for mobile devices. The current implementation uses a combination of *SQL-Vec* and *Op-SQLite*, which provides an efficient and optimized solution for vector storage and local embedding generation on mobile devices.
 
-*** Phase 1: Core RAG Implementation (Weeks 1-6)
-- Set up the project using =bunx create-expo-app= with TypeScript.
-- Integrate =onnxruntime-react-native= for LLM inference.
-- Convert and optimize target models to ONNX format.
-    - Build the RAG pipeline with a sample, bundled knowledge base.
-- Create the core chat UI with streaming responses.
-- Implement basic document processing and vector storage.
-- Add security layer with document integrity verification.
+* Technical Implementation
 
-*** Phase 2: Distributed Knowledge Base (Weeks 7-12)
-- Implement vector clocks for distributed versioning.
-- Build conflict resolution system for concurrent updates.
-- Add delta synchronization to minimize bandwidth usage.
-- Implement document lifecycle management and priority-based sync.
-- Create mesh network routing capabilities.
-- Add device health monitoring and network topology awareness.
-- Integrate the sync logic with the knowledge base.
+** Device Configuration
 
-*** Phase 3: P2P Synchronization (Weeks 13-18)
-    - Add =react-native-ble-plx= to the development client.
-    - Implement the BLE advertising and scanning logic.
-- Develop the document transfer protocol with encryption.
-- Add mesh networking for multi-hop communication.
-- Implement fallback communication methods.
-- Add network resilience and automatic recovery mechanisms.
+- *Worker Devices/Rufis:* Computers running Ollama with AI models or Mobile with Rufaydah App
+- *Consumer Devices:* Mobile phones running the Rufaydah app
+- *Network:* BLE for discovery, HTTP for AI queries
 
-*** Phase 4: Field Validation & Optimization (Weeks 19-24)
-- Conduct performance benchmarking and optimization.
-- Implement intelligent power management based on criticality.
-- Add offline mapping integration and location-based features.
-- Conduct field testing with target user groups in controlled environments.
-- Perform security auditing and penetration testing.
-- Optimize battery usage and response times.
-- Improve the UI/UX based on field feedback.
+* Bluetooth Mesh Network
+The mesh network allows for automatic discovery and resource sharing between Rufi devices.
 
-*** Phase 5: Production Readiness (Weeks 25-30)
-- Finalize documentation and user training materials.
-- Implement comprehensive error handling and recovery.
-- Add monitoring and analytics for system health.
-- Conduct final security review and compliance checks.
-- Prepare deployment strategy and distribution channels.
-- Create maintenance and update procedures.
+- *Rufi Discovery*: Automatically detects nearby AI-enabled devices.
+- *Dual Role Support*: Each Rufi can act as a Producer (serving an LLM and documents) or a Consumer (querying the network).
+- *Architecture*:
+#+BEGIN_SRC
+Rufi Device A (Producer) <--> Rufi Device B (Consumer)
+       |                           |
+  LLM + Docs                  Query Interface
+       |                           |
+  Bluetooth LE <---------------> Bluetooth LE
+#+END_SRC
 
------
+* Project Status
 
-** 5. Risk Mitigation & Contingencies
+** Completed
+- *Core React Native App:* Chat interface with distributed AI integration
+- *BLE Device Discovery:* Automatic scanning and connection management
+- *Distributed LLM Service:* HTTP integration with Ollama workers
+- *Device Management UI:* Settings screen with device selection
+- *Worker Scripts:* Python BLE advertiser and AI server
 
-*** Technical Risks
-- *Mobile LLM Performance:* Prototype with smaller models first, implement cloud fallback.
-- *BLE Range Limitations:* Test in various environmental conditions, implement mesh networking.
-- *Storage Constraints:* Implement document lifecycle management and compression.
-- *Battery Drain:* Optimize sync frequency and implement intelligent power management.
+** In Progress
+- *Performance Optimization:* Reducing query latency and improving reliability
+- *Multi-model Support:* Expanding support for different AI models
+- *Error Handling:* Improving connection stability and error recovery
+- Proper GATT interface.
 
-*** Operational Risks
-- *Network Fragmentation:* Implement robust conflict resolution and eventual consistency.
-- *Data Corruption:* Add multiple layers of integrity checking and automatic recovery.
-- *User Training:* Create intuitive interface and comprehensive documentation.
+** Planned
+- *P2P Knowledge Sync:* Automatic document synchronization between devices
+- *Advanced RAG:* Enhanced local knowledge base with vector search
+- *Field Testing:* Real-world deployment and user feedback
 
-*** Security Risks
-- *Detection:* Minimize BLE signature and implement operational security measures.
-- *Data Breach:* Use strong encryption and implement access controls.
-- *Supply Chain:* Verify all dependencies and implement integrity checking.
+* Getting Started
 
------
+** Prerequisites
+- Node.js 18+ and npm
+- React Native development environment
+- Python 3.8+ with pip
+- Ollama installed on worker devices or App on two devices
+- Android/iOS development tools
 
-** 6. Success Metrics
+** Quick Start
+** Worker Setup (Python)
 
-*** Technical Metrics
-- Response time < 2 seconds for critical medical queries
-- Battery usage < 5% per hour during active use
-- Sync completion within 30 seconds for document updates
-- 99.9% uptime in offline mode
+#+BEGIN_SRC bash
+# Install dependencies
+pip install -r requirements.txt
 
-*** Operational Metrics
-- Knowledge base accuracy > 95% compared to authoritative sources
-- User adoption rate > 80% in target environments
-- Training time < 30 minutes for new users
-- Support request rate < 5% of active users
+# Run BLE advertiser
+python3 scripts/bluetoothctl-advertiser.py --device-name "Rufaydah-Phi3"
 
-*** Security Metrics
-- Zero successful attacks in penetration testing
-- All communications encrypted end-to-end
-- No detectable signature in RF analysis
-- Complete audit trail for all data access
+# Run AI worker server
+python3 scripts/leai-ble-server.py --model phi3 --device-name "Rufaydah Provider" --port 11434
+#+END_SRC
+
+** Mobile App Setup
+
+#+BEGIN_SRC bash
+# Install dependencies
+npm install
+
+# Run on Android
+bash build-android.sh
+
+# Run on iOS (TODO)
+npx react-native run-ios
+#+END_SRC
+
+** Worker Setup on Laptop
+1. *Setup Worker Device:*
+   #+BEGIN_SRC bash
+   cd scripts
+   python3 leai-ble-server.py --model phi3 --device-name "Rufaydah Provider"
+   #+END_SRC
+
+
+** Connect to Rufis/Producer
+3. *Connect Devices:*
+   - Open app settings
+   - Scan for devices
+   - Connect to available AI workers
+   - Start querying AI models
+
+* Impact & Use Cases
+** War-Torn Regions
+- *Medical Consultation*: Provide guidance when doctors are unavailable.
+- *Legal Guidance*: Offer information to displaced persons.
+- *Education*: Deliver educational content when schooling is interrupted.
+
+** Disaster Areas
+- *Emergency Response*: Coordinate response efforts and locate resources.
+- *Communication*: Provide a communication channel when cell towers are down.
+
+The Rufaydah platform represents a new approach to mobile AI, enabling powerful distributed processing while maintaining the low-power, low-signature characteristics essential for emergency response scenarios.
